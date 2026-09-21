@@ -4,7 +4,7 @@
 import time
 
 import pytest
-from gi.repository import Adw, Gio, GdkPixbuf, GLib, Gtk
+from gi.repository import Adw, Gdk, Gio, GdkPixbuf, GLib, Gtk
 
 from tempera import recent_files, settings
 from tempera.color import rgba
@@ -626,3 +626,21 @@ def test_a_shape_tool_saved_by_tempera_1_0_opens_as_that_shape(application, wind
         assert reopened.canvas.shapes.shape.id == "ellipse"
     finally:
         reopened.destroy()
+
+
+# The color picker
+
+
+def test_picking_a_color_keeps_it_rather_than_turning_black(window):
+    """The picked color comes through a signal, so it has to outlive the emission."""
+    blue = (0.2, 0.5, 0.9, 1.0)
+    paint_pixel(window.canvas.document.surface, 5, 5, blue)
+    window.lookup_action("tool").change_state(GLib.Variant.new_string("picker"))
+
+    ctx = window.canvas._make_context(Gdk.BUTTON_PRIMARY)
+    window.canvas.active_tool.press(ctx, 5, 5)
+
+    # Read it back only once the emission is long over, the way a redraw would.
+    picked = window.colors.primary
+    assert [round(channel, 2) for channel in
+            (picked.red, picked.green, picked.blue, picked.alpha)] == list(blue)

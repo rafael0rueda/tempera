@@ -751,6 +751,9 @@ class TemperaWindow(Adw.ApplicationWindow):
         dialog.choose_font(self, Pango.FontDescription(self.canvas.font), None, on_done)
 
     def _on_color_picked(self, canvas, color, button) -> None:
+        # The color arrives on loan from the signal and is freed as soon as the
+        # emission ends, so it has to be copied before it is kept.
+        color = color.copy()
         if button == Gdk.BUTTON_SECONDARY:
             self.colors.secondary = color
         else:
