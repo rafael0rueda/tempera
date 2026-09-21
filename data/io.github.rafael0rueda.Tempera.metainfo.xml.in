@@ -16,7 +16,7 @@
     <p>Features:</p>
     <ul>
       <li>Pencil, brush, airbrush and eraser, which can rub back to transparency</li>
-      <li>Nine shapes — line, curve, arrow, rectangle, rounded rectangle, ellipse, triangle, star and polygon — filled or outlined, with Shift for squares, circles and 45° lines</li>
+      <li>Nine shapes — line, curve, arrow, rectangle, rounded rectangle, ellipse, triangle, star and polygon — filled or outlined, with Shift for squares, circles and 45° lines, and grips to resize or move each one before it lands</li>
       <li>Text in any font installed on the system</li>
       <li>Flood fill with an adjustable tolerance, and a colour picker</li>
       <li>Colours of any opacity, with the ones picked lately kept beside the palette</li>
@@ -80,6 +80,22 @@
     <category>RasterGraphics</category>
   </categories>
   <releases>
+    <release version="1.2.0" date="2026-09-20">
+      <description>
+        <p>Shapes can now be put right before they land.</p>
+        <p>New features:</p>
+        <ul>
+          <li>A shape waits after it is drawn, with grips to resize it: a dashed box with a grip on every corner and side for the rectangle, rounded rectangle, ellipse, triangle and star, and grips on their own ends, bends and corners for the line, arrow, curve and polygon</li>
+          <li>Shift on a grip squares a shape up or snaps a point to 45°, dragging inside slides the whole shape, and the arrow keys nudge it a pixel at a time</li>
+          <li>The colour, size and Fill shape apply to a shape while it waits, so it can be restyled before it lands</li>
+          <li>Enter lands the shape and Esc drops it; drawing somewhere else lands the one waiting and starts the next. However it lands, it is a single step to undo</li>
+        </ul>
+        <p>Fixes:</p>
+        <ul>
+          <li>The colour picker keeps the colour it picked, instead of turning the swatch black</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.1.0" date="2026-09-19">
       <description>
         <p>Tempera 1.1 brings more ways to draw and select, printing, and a bigger interface for those who need it.</p>
