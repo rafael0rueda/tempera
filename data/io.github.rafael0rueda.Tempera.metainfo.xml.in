@@ -64,15 +64,15 @@
   <screenshots>
     <screenshot type="default">
       <caption>Painting a landscape with the brush</caption>
-      <image type="source" width="1120" height="800">https://raw.githubusercontent.com/rafael0rueda/tempera/v1.1.0/data/screenshots/main-window.png</image>
+      <image type="source" width="1120" height="800">https://raw.githubusercontent.com/rafael0rueda/tempera/v1.2.0/data/screenshots/main-window.png</image>
     </screenshot>
     <screenshot>
       <caption>The dark style, with a free-form selection drawn with the lasso</caption>
-      <image type="source" width="1120" height="800">https://raw.githubusercontent.com/rafael0rueda/tempera/v1.1.0/data/screenshots/dark-style.png</image>
+      <image type="source" width="1120" height="800">https://raw.githubusercontent.com/rafael0rueda/tempera/v1.2.0/data/screenshots/dark-style.png</image>
     </screenshot>
     <screenshot>
       <caption>A bigger interface size, with the Shapes tool</caption>
-      <image type="source" width="1120" height="800">https://raw.githubusercontent.com/rafael0rueda/tempera/v1.1.0/data/screenshots/interface-size.png</image>
+      <image type="source" width="1120" height="800">https://raw.githubusercontent.com/rafael0rueda/tempera/v1.2.0/data/screenshots/interface-size.png</image>
     </screenshot>
   </screenshots>
   <categories>
