@@ -335,4 +335,4 @@ remembered. It adds to GNOME's own **Large Text** setting rather than replacing 
 image itself and the file dialogs, which the desktop draws, keep their usual size. When
 the window is too small for everything at a big size, the sidebar and palette scroll.
 
-![Tempera at 150% interface size, with the Shapes tool selected and its nine shapes and the Fill shape option under the size slider](data/screenshots/interface-size.png)
+![Tempera at 150% interface size, with the Shapes tool selected and its nine shapes and the Fill shape option under the size slider, and a star just drawn on the canvas waiting in a dashed box with a grip on each corner and side](data/screenshots/interface-size.png)

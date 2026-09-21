@@ -71,7 +71,7 @@
       <image type="source" width="1120" height="800">https://raw.githubusercontent.com/rafael0rueda/tempera/v1.2.0/data/screenshots/dark-style.png</image>
     </screenshot>
     <screenshot>
-      <caption>A bigger interface size, with the Shapes tool</caption>
+      <caption>A star waiting with grips to resize it, at a bigger interface size</caption>
       <image type="source" width="1120" height="800">https://raw.githubusercontent.com/rafael0rueda/tempera/v1.2.0/data/screenshots/interface-size.png</image>
     </screenshot>
   </screenshots>
