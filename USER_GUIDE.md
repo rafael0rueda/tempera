@@ -51,11 +51,30 @@ which also picks up the tool.
 | Star              | `H` | Drag; `Shift` makes it regular                                   |
 | Polygon           | `G` | Click each corner; click the first one again, or the last twice  |
 
+Every shape can be resized and moved after it is drawn, before it lands; see below.
+
 **Fill shape** fills the closed shapes with the secondary colour, which the swatch
 beside it shows; click the swatch to change it. The polygon and the
 curve stay open for more clicks until they are finished: `Enter` lands one early, `Esc`
-drops it, and picking another tool or shape lands it. Either way it is a single step
-to undo.
+drops it.
+
+A shape does not land as soon as it is drawn. It waits, with grips on it, so it can be
+put right before it becomes pixels:
+
+- The rectangle, rounded rectangle, ellipse, triangle and star sit in a dashed box with
+  a grip on each corner and on the middle of each side. A corner changes both
+  directions at once, a side only its own. `Shift` on a grip squares the shape up.
+- The line and the arrow have a grip on each end, the curve one on each end and one at
+  each bend, and the polygon one on every corner. `Shift` snaps the point being dragged
+  to 45°, the same way drawing it does.
+- Dragging anywhere inside the shape slides it somewhere else, and the arrow keys nudge
+  it a pixel at a time — ten with `Shift`.
+- The colour, size and **Fill shape** apply to the shape as it waits, so a rectangle can
+  be recoloured or filled before it lands.
+
+`Enter` lands the shape, `Esc` drops it, and so does `Ctrl+Z`. Picking another tool or
+shape lands it, as does saving, and so does drawing somewhere else: the drag that starts
+the next shape lands the one waiting. However it lands, it is a single step to undo.
 
 Left click draws with the primary colour, right click with the secondary one. Both
 colour swatches in the bottom bar work the same way: left click sets the primary

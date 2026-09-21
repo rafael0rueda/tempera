@@ -834,7 +834,9 @@ class TemperaWindow(Adw.ApplicationWindow):
         width, height = self.canvas.pending_size
         self._canvas_size_label.set_label(_("{width} × {height} px").format(width=width, height=height))
         # Undo also takes back what has not been stamped down yet.
-        self.lookup_action("undo").set_enabled(document.can_undo or self.canvas.has_floating)
+        self.lookup_action("undo").set_enabled(
+            document.can_undo or self.canvas.has_floating or self.canvas.shape_in_progress
+        )
         self.lookup_action("redo").set_enabled(document.can_redo)
 
     def _on_floating_changed(self, *_args) -> None:

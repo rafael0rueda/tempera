@@ -128,6 +128,39 @@ class Tool:
     def cancel(self) -> None:
         pass
 
+    # A shape that has been drawn but not yet landed is adjustable: it shows
+    # grips the canvas can hand back drags for, and can be moved as a whole
+    # until Enter, another tool, or a press away from it lands it.
+
+    @property
+    def adjustable(self) -> bool:
+        return False
+
+    def handles(self) -> dict[str, tuple[float, float]]:
+        """Where the grips sit, in image pixels, named for the cursor they take."""
+        return {}
+
+    def frame(self) -> tuple[float, float, float, float] | None:
+        """The dashed outline to draw around the shape, for the ones grips box in."""
+        return None
+
+    def bounds(self) -> tuple[float, float, float, float] | None:
+        """Everything the shape covers, for deciding how near a grip a press is."""
+        return None
+
+    def contains(self, x: float, y: float, reach: float) -> bool:
+        """Whether a press there has hold of the shape, to drag it somewhere else."""
+        return False
+
+    def grab(self, handle: str | None, x: float, y: float) -> None:
+        """Start adjusting: a grip by name, or the whole shape with None."""
+
+    def drag_to(self, x: float, y: float, constrain: bool = False) -> None:
+        """Carry on the adjustment the pointer is now here."""
+
+    def move_by(self, dx: float, dy: float) -> None:
+        """Shift the whole shape, for the arrow keys."""
+
 
 class FreehandTool(Tool):
     """Draws a continuous stroke straight onto the document surface."""
@@ -191,6 +224,74 @@ class FreehandTool(Tool):
         self._last = None
 
 
+def rect_handles(
+    x: float, y: float, width: float, height: float
+) -> dict[str, tuple[float, float]]:
+    """The eight grips of a rectangle, named after the compass point they sit on."""
+    return {
+        "nw": (x, y),
+        "n": (x + width / 2, y),
+        "ne": (x + width, y),
+        "w": (x, y + height / 2),
+        "e": (x + width, y + height / 2),
+        "sw": (x, y + height),
+        "s": (x + width / 2, y + height),
+        "se": (x + width, y + height),
+    }
+
+
+def distance_to_segment(
+    point: tuple[float, float], start: tuple[float, float], end: tuple[float, float]
+) -> float:
+    """How far a point is from the line between two others, as drawn rather than extended."""
+    px, py = point
+    sx, sy = start
+    ex, ey = end
+    dx, dy = ex - sx, ey - sy
+    length = dx * dx + dy * dy
+    if length == 0:
+        return math.hypot(px - sx, py - sy)
+    # Where along the segment the point falls, kept between its two ends.
+    along = max(0.0, min(1.0, ((px - sx) * dx + (py - sy) * dy) / length))
+    return math.hypot(px - (sx + along * dx), py - (sy + along * dy))
+
+
+def resize_box(
+    handle: str,
+    rect: tuple[float, float, float, float],
+    x: float,
+    y: float,
+    constrain: bool = False,
+) -> tuple[tuple[float, float], tuple[float, float]]:
+    """A rectangle with one grip dragged to a point, as its two opposite corners.
+
+    The sides the grip does not touch stay where they are, and a side never
+    crosses the one facing it. Constrained, the shape squares up around the
+    corner the grip is pulling away from.
+    """
+    left, top, width, height = rect
+    right, bottom = left + width, top + height
+    if "w" in handle:
+        left = min(x, right)
+    elif "e" in handle:
+        right = max(x, left)
+    if "n" in handle:
+        top = min(y, bottom)
+    elif "s" in handle:
+        bottom = max(y, top)
+    if constrain:
+        size = max(right - left, bottom - top)
+        if "w" in handle:
+            left = right - size
+        else:
+            right = left + size
+        if "n" in handle:
+            top = bottom - size
+        else:
+            bottom = top + size
+    return (left, top), (right, bottom)
+
+
 def snap_45(origin: tuple[float, float], point: tuple[float, float]) -> tuple[float, float]:
     """Turn the line from origin to point to the nearest 45° angle, keeping its length."""
     x, y = point
@@ -202,33 +303,117 @@ def snap_45(origin: tuple[float, float], point: tuple[float, float]) -> tuple[fl
 
 
 class ShapeTool(Tool):
-    """Rubber-bands a shape while dragging and commits it on release."""
+    """Rubber-bands a shape while dragging, then holds it adjustable until it lands."""
 
     # Whether "Fill shape" applies: closed shapes have an inside to fill.
     fillable = True
+    # Whether the grips box the shape in. A line has no box to stretch, so it
+    # is dragged by its two ends instead.
+    box_handles = True
 
     def __init__(self):
         self._start: tuple[float, float] | None = None
         self._current: tuple[float, float] | None = None
+        # The drag is over and the shape is waiting to be adjusted or landed.
+        self._pending = False
+        # Where the shape and the pointer were when a grip was taken hold of.
+        self._grab: tuple[str | None, tuple, tuple, tuple] | None = None
+
+    @property
+    def in_progress(self) -> bool:
+        return self._pending
+
+    @property
+    def adjustable(self) -> bool:
+        return self._pending
 
     def press(self, ctx, x, y):
         self._start = (x, y)
         self._current = (x, y)
+        self._pending = False
 
     def motion(self, ctx, x, y):
         self._current = self._constrain((x, y)) if ctx.constrain else (x, y)
 
     def release(self, ctx, x, y):
         self._current = self._constrain((x, y)) if ctx.constrain else (x, y)
-        if self._start is not None:
-            cr = cairo.Context(ctx.surface)
-            self.render(cr, ctx, self._start, self._current)
-        self._start = None
-        self._current = None
+        if self._start is None or self._start == self._current:
+            # A press that never moved places nothing, the way a click is no curve.
+            self.cancel()
+            return
+        self._pending = True
 
     def draw_preview(self, cr, ctx):
         if self._start is not None and self._current is not None:
             self.render(cr, ctx, self._start, self._current)
+
+    def finish(self, ctx):
+        start, end = self._start, self._current
+        self.cancel()
+        if start is None or end is None:
+            return
+        cr = cairo.Context(ctx.surface)
+        self.render(cr, ctx, start, end)
+
+    def cancel(self):
+        self._start = None
+        self._current = None
+        self._pending = False
+        self._grab = None
+
+    # Adjusting
+
+    def handles(self):
+        if not self._pending:
+            return {}
+        if self.box_handles:
+            return rect_handles(*self.rect(self._start, self._current))
+        return {"start": self._start, "end": self._current}
+
+    def frame(self):
+        if not self._pending or not self.box_handles:
+            return None
+        return self.rect(self._start, self._current)
+
+    def bounds(self):
+        if not self._pending:
+            return None
+        return self.rect(self._start, self._current)
+
+    def contains(self, x, y, reach):
+        if not self._pending:
+            return False
+        if self.box_handles:
+            bx, by, width, height = self.rect(self._start, self._current)
+            return bx - reach <= x <= bx + width + reach and by - reach <= y <= by + height + reach
+        return distance_to_segment((x, y), self._start, self._current) <= reach
+
+    def grab(self, handle, x, y):
+        if self._pending:
+            self._grab = (handle, self._start, self._current, (x, y))
+
+    def drag_to(self, x, y, constrain=False):
+        if self._grab is None:
+            return
+        handle, start, end, origin = self._grab
+        if handle is None:
+            dx, dy = x - origin[0], y - origin[1]
+            self._start = (start[0] + dx, start[1] + dy)
+            self._current = (end[0] + dx, end[1] + dy)
+        elif self.box_handles:
+            self._start, self._current = resize_box(
+                handle, self.rect(start, end), x, y, constrain
+            )
+        elif handle == "start":
+            self._start = snap_45(end, (x, y)) if constrain else (x, y)
+        else:
+            self._current = snap_45(start, (x, y)) if constrain else (x, y)
+
+    def move_by(self, dx, dy):
+        if not self._pending:
+            return
+        self._start = (self._start[0] + dx, self._start[1] + dy)
+        self._current = (self._current[0] + dx, self._current[1] + dy)
 
     def render(self, cr, ctx, start, end) -> None:
         raise NotImplementedError

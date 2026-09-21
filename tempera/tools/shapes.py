@@ -73,3 +73,28 @@ class ShapesTool(Tool):
 
     def cancel(self):
         self.shape.cancel()
+
+    @property
+    def adjustable(self) -> bool:
+        return self.shape.adjustable
+
+    def handles(self):
+        return self.shape.handles()
+
+    def frame(self):
+        return self.shape.frame()
+
+    def bounds(self):
+        return self.shape.bounds()
+
+    def contains(self, x, y, reach):
+        return self.shape.contains(x, y, reach)
+
+    def grab(self, handle, x, y):
+        self.shape.grab(handle, x, y)
+
+    def drag_to(self, x, y, constrain=False):
+        self.shape.drag_to(x, y, constrain)
+
+    def move_by(self, dx, dy):
+        self.shape.move_by(dx, dy)

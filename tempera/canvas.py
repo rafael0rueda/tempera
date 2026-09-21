@@ -31,7 +31,7 @@ from .tools import (
     create_tools,
     draw_marquee,
 )
-from .tools.base import draw_outline_marquee
+from .tools.base import draw_outline_marquee, rect_handles
 
 CHECKER_SIZE = 8
 # Below this zoom the image is shrunk, where smoothing reads better than dropped
@@ -187,8 +187,11 @@ class Canvas(Gtk.DrawingArea):
         self.colors = colors
         self.tools = create_tools()
         self.active_tool: Tool = self.tools["pencil"]
-        self.brush_size = 4
-        self.fill_shapes = False
+        # A shape waiting to land is drawn afresh every frame, so a colour
+        # picked now shows on it rather than only on the next shape.
+        colors.connect("changed", lambda *_args: self._restyle_shape())
+        self._brush_size = 4
+        self._fill_shapes = False
         self.erase_to_transparency = False
         self.fill_tolerance = DEFAULT_TOLERANCE
         self.airbrush_density = DEFAULT_DENSITY
@@ -206,6 +209,8 @@ class Canvas(Gtk.DrawingArea):
         # The timer that keeps the airbrush spraying while it is held still.
         self._repeat_source = 0
         self._resize_handle: str | None = None
+        # A grip on a pending shape, or the shape itself, is being dragged.
+        self._shape_adjusting = False
         self._pan_origin: tuple[float, float] | None = None
         self._pinch_zoom = 1.0
         self._resize_size: tuple[int, int] | None = None
@@ -359,6 +364,29 @@ class Canvas(Gtk.DrawingArea):
     @property
     def supports_density(self) -> bool:
         return self.active_tool.id == AIRBRUSH_TOOL_ID
+
+    @property
+    def brush_size(self) -> int:
+        return self._brush_size
+
+    @brush_size.setter
+    def brush_size(self, value: int) -> None:
+        self._brush_size = value
+        self._restyle_shape()
+
+    @property
+    def fill_shapes(self) -> bool:
+        return self._fill_shapes
+
+    @fill_shapes.setter
+    def fill_shapes(self, value: bool) -> None:
+        self._fill_shapes = value
+        self._restyle_shape()
+
+    def _restyle_shape(self) -> None:
+        """Show a change of colour, size or fill on a shape that has not landed yet."""
+        if self.active_tool.in_progress:
+            self.queue_draw()
 
     @property
     def show_pixel_grid(self) -> bool:
@@ -685,8 +713,12 @@ class Canvas(Gtk.DrawingArea):
 
     @property
     def has_pending_floating(self) -> bool:
-        """Whether landing what floats would change the image: a paste, or text with something typed."""
-        return self._paste is not None or (self._text is not None and bool(self._text.text))
+        """Whether landing what floats would change the image: a paste, text with something typed, or a shape."""
+        return (
+            self._paste is not None
+            or (self._text is not None and bool(self._text.text))
+            or self.shape_in_progress
+        )
 
     def _floating_bounds(self) -> tuple[float, float, int, int] | None:
         """Where the pending paste or text sits, or None when nothing floats."""
@@ -732,6 +764,7 @@ class Canvas(Gtk.DrawingArea):
         self.active_tool.finish(self._make_context(self._shape_button))
         self._document.finish_change()
         self.queue_draw()
+        self.emit("floating-changed")
         return True
 
     def cancel_shape(self) -> bool:
@@ -739,6 +772,7 @@ class Canvas(Gtk.DrawingArea):
             return False
         self.active_tool.cancel()
         self.queue_draw()
+        self.emit("floating-changed")
         return True
 
     def begin_paste(
@@ -879,6 +913,11 @@ class Canvas(Gtk.DrawingArea):
                 return self.cancel_shape()
             if keyval in (Gdk.KEY_Return, Gdk.KEY_KP_Enter, Gdk.KEY_ISO_Enter):
                 return self.finish_shape()
+            delta = self._nudge_delta(keyval, state)
+            if delta is not None and self.active_tool.adjustable:
+                self.active_tool.move_by(*delta)
+                self.queue_draw()
+                return True
             return False
         if self._paste is not None:
             if keyval == Gdk.KEY_Escape:
@@ -960,30 +999,20 @@ class Canvas(Gtk.DrawingArea):
 
     # Resize grips
 
-    @staticmethod
-    def _rect_handles(x: float, y: float, width: float, height: float) -> dict[str, tuple[float, float]]:
-        return {
-            "nw": (x, y),
-            "n": (x + width / 2, y),
-            "ne": (x + width, y),
-            "w": (x, y + height / 2),
-            "e": (x + width, y + height / 2),
-            "sw": (x, y + height),
-            "s": (x + width / 2, y + height),
-            "se": (x + width, y + height),
-        }
-
     def _handles(self) -> dict[str, tuple[float, float]]:
         if self._paste is not None:
             # Scales the pasted pixels rather than the canvas.
-            return self._rect_handles(self._paste.x, self._paste.y, self._paste.width, self._paste.height)
+            return rect_handles(self._paste.x, self._paste.y, self._paste.width, self._paste.height)
+        if self.active_tool.adjustable:
+            # A shape that has been drawn but not landed: its own grips reshape it.
+            return self.active_tool.handles()
         if self.has_floating or self.active_tool.in_progress:
             # A text box owns the pointer until it lands, and a shape being
             # placed takes every click, even on the edge of the image.
             return {}
         if self.selecting and self._selection is not None:
             # Scales the selected pixels in place.
-            return self._rect_handles(*self._selection.rect)
+            return rect_handles(*self._selection.rect)
         width, height = self._resize_size or (self._document.width, self._document.height)
         return {
             "e": (width, height / 2),
@@ -1016,10 +1045,17 @@ class Canvas(Gtk.DrawingArea):
         self.queue_draw()
         self.emit("floating-changed")
 
+    def _shape_reach(self) -> float:
+        """How near a pending shape a press has to land to take hold of it."""
+        return scaled(POINT_REACH) / self.zoom + self._brush_size / 2
+
     def _handle_box(self) -> tuple[float, float, float, float]:
-        """The rectangle the handles belong to: a paste, a selection, or the image."""
+        """The rectangle the handles belong to: a paste, a shape, a selection, or the image."""
         if self._paste is not None:
             return self._paste.x, self._paste.y, self._paste.width, self._paste.height
+        bounds = self.active_tool.bounds() if self.active_tool.adjustable else None
+        if bounds is not None:
+            return bounds
         if self.selecting and self._selection is not None:
             return self._selection.rect
         return 0, 0, self._document.width, self._document.height
@@ -1044,7 +1080,11 @@ class Canvas(Gtk.DrawingArea):
         return best
 
     def _set_cursor(self, handle: str | None) -> None:
-        name = HANDLE_CURSORS.get(handle, "crosshair")
+        if handle is not None and handle not in HANDLE_CURSORS:
+            # A grip on one of a shape's own points, which goes anywhere.
+            name = "move"
+        else:
+            name = HANDLE_CURSORS.get(handle, "crosshair")
         self.set_cursor(Gdk.Cursor.new_from_name(name))
 
     def _on_motion(self, controller, x, y) -> None:
@@ -1063,6 +1103,9 @@ class Canvas(Gtk.DrawingArea):
             return
         if self._paste is not None and self._paste.contains(x, y):
             self._set_cursor("paste")
+            return
+        if self.active_tool.adjustable and self.active_tool.contains(x, y, self._shape_reach()):
+            self._set_cursor("selection")
             return
         if self._text is not None and self._text.contains(x, y, TEXT_PADDING):
             self._set_cursor("text")
@@ -1147,6 +1190,23 @@ class Canvas(Gtk.DrawingArea):
                 self.commit_paste()
             return
 
+        if self.active_tool.adjustable:
+            if handle is not None:
+                self.active_tool.grab(handle, start_x, start_y)
+                self._set_cursor(handle)
+            elif self.active_tool.contains(start_x, start_y, self._shape_reach()):
+                self.active_tool.grab(None, start_x, start_y)
+                self._set_cursor("selection")
+            else:
+                # Pressing away lands the shape, and this same drag draws the
+                # next one; a press that never moves just lands it.
+                origin, self._drag_origin = self._drag_origin, None
+                self.finish_shape()
+                self._drag_origin = origin
+            if self.active_tool.adjustable:
+                self._shape_adjusting = True
+                return
+
         # Grabbing a selection's own handle scales it in place, without a
         # separate gesture to first lift it the way moving it needs.
         if self.selecting and self._selection is not None and handle is not None:
@@ -1217,6 +1277,13 @@ class Canvas(Gtk.DrawingArea):
             self._resize_paste(x, y)
             return
 
+        if self._shape_adjusting:
+            self.active_tool.drag_to(
+                x, y, bool(gesture.get_current_event_state() & Gdk.ModifierType.SHIFT_MASK)
+            )
+            self.queue_draw()
+            return
+
         if self._paste_origin is not None:
             self._paste.move_to(self._paste_origin[0] + offset_x, self._paste_origin[1] + offset_y)
             self._sync_content_size()
@@ -1263,6 +1330,15 @@ class Canvas(Gtk.DrawingArea):
             self._drag_origin = None
             return
 
+        if self._shape_adjusting:
+            self.active_tool.drag_to(
+                x, y, bool(gesture.get_current_event_state() & Gdk.ModifierType.SHIFT_MASK)
+            )
+            self._shape_adjusting = False
+            self._drag_origin = None
+            self.queue_draw()
+            return
+
         if self._paste_origin is not None or self._paste is not None:
             # A floating paste stays floating; the drag only moved it.
             self._paste_origin = None
@@ -1296,6 +1372,7 @@ class Canvas(Gtk.DrawingArea):
         if self.active_tool.in_progress:
             # Enter lands the shape and Esc drops it.
             self.grab_focus()
+            self.emit("floating-changed")
         self.queue_draw()
 
     # Drawing
@@ -1343,6 +1420,9 @@ class Canvas(Gtk.DrawingArea):
         cr.restore()
 
         accent = self._accent()
+        frame = self.active_tool.frame() if self.active_tool.adjustable else None
+        if frame is not None and frame[2] >= 1 and frame[3] >= 1:
+            self._draw_dashed_rect(cr, accent, *frame)
         if self._resize_size is not None:
             self._draw_resize_preview(cr, accent, image_width, image_height)
         if self._paste is not None:

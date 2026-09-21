@@ -12,6 +12,8 @@ class LineTool(ShapeTool):
     label = _("Line")
     icon_name = "tempera-line-symbolic"
     fillable = False
+    # No box to stretch: a line is adjusted by the grips on its two ends.
+    box_handles = False
 
     def render(self, cr, ctx, start, end):
         cr.set_line_width(ctx.size)

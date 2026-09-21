@@ -145,7 +145,7 @@ def test_paste_resized_never_collapses_to_zero_or_negative():
 def test_handle_at_picks_the_closest_handle_on_a_small_selection():
     # All 8 handles of a 2x2 selection sit within HANDLE_GRAB of each other,
     # so this only works if the nearest one wins rather than nw (the first
-    # one _rect_handles happens to list).
+    # one rect_handles happens to list).
     canvas = make_canvas(8, 8)
     canvas.select_tool("select")
     canvas.set_selection(Selection(1, 1, 2, 2))

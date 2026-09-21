@@ -13,7 +13,9 @@ from tempera.document import Document, new_surface
 from tempera.tools.arrow import ArrowTool, head_length
 from tempera.tools.base import ToolContext
 from tempera.tools.curve import CurveTool
+from tempera.tools.line import LineTool
 from tempera.tools.polygon import PolygonTool
+from tempera.tools.rectangle import RectangleTool
 from tempera.tools.rounded_rectangle import RoundedRectangleTool
 from tempera.tools.shapes import SHAPE_CLASSES, ShapesTool
 from tempera.tools.star import StarTool, star_points
@@ -58,6 +60,12 @@ def click(tool, ctx, point) -> None:
     drag(tool, ctx, point, point)
 
 
+def draw(tool, ctx, start, end) -> None:
+    """Drag a shape out and land it, which a shape now waits to be told to do."""
+    drag(tool, ctx, start, end)
+    tool.finish(ctx)
+
+
 # The shape set
 
 
@@ -78,7 +86,7 @@ def test_the_shapes_tool_draws_with_the_shape_in_hand():
     tool.select("triangle")
     assert isinstance(tool.shape, TriangleTool)
     surface = new_surface(20, 20, WHITE)
-    drag(tool, context(surface, fill=True), (0, 0), (20, 20))
+    draw(tool, context(surface, fill=True), (0, 0), (20, 20))
     assert pixel_at(surface, 10, 15) == RED_PIXEL
     assert pixel_at(surface, 1, 1) == WHITE_PIXEL
 
@@ -88,14 +96,14 @@ def test_the_shapes_tool_draws_with_the_shape_in_hand():
 
 def test_a_filled_triangle_stands_on_its_base():
     surface = new_surface(40, 40, WHITE)
-    drag(TriangleTool(), context(surface, fill=True), (0, 0), (40, 40))
+    draw(TriangleTool(), context(surface, fill=True), (0, 0), (40, 40))
     assert pixel_at(surface, 20, 35) == RED_PIXEL  # inside, near the base
     assert pixel_at(surface, 3, 5) == WHITE_PIXEL  # beside the apex
 
 
 def test_a_rounded_rectangle_leaves_its_corners_empty():
     surface = new_surface(40, 40, WHITE)
-    drag(RoundedRectangleTool(), context(surface, size=2), (0, 0), (40, 40))
+    draw(RoundedRectangleTool(), context(surface, size=2), (0, 0), (40, 40))
     assert pixel_at(surface, 0, 0) == WHITE_PIXEL
     assert pixel_at(surface, 20, 0) == BLACK_PIXEL  # the middle of the top edge
 
@@ -111,7 +119,7 @@ def test_star_points_alternate_between_the_tips_and_the_inner_corners():
 
 def test_a_filled_star_is_filled_in_the_middle_and_not_between_its_points():
     surface = new_surface(40, 40, WHITE)
-    drag(StarTool(), context(surface, fill=True), (0, 0), (40, 40))
+    draw(StarTool(), context(surface, fill=True), (0, 0), (40, 40))
     assert pixel_at(surface, 20, 20) == RED_PIXEL
     assert pixel_at(surface, 2, 2) == WHITE_PIXEL
 
@@ -124,7 +132,7 @@ def test_shift_squares_up_a_star():
 
 def test_an_arrow_has_a_head_wider_than_its_shaft():
     surface = new_surface(100, 40, WHITE)
-    drag(ArrowTool(), context(surface, size=2), (5, 20), (95, 20))
+    draw(ArrowTool(), context(surface, size=2), (5, 20), (95, 20))
     assert pixel_at(surface, 30, 20) == BLACK_PIXEL
     assert pixel_at(surface, 30, 24) == WHITE_PIXEL  # beside the thin shaft
     head_base = 95 - head_length(2) + 1
@@ -134,7 +142,7 @@ def test_an_arrow_has_a_head_wider_than_its_shaft():
 
 def test_a_short_arrow_is_all_head():
     surface = new_surface(40, 40, WHITE)
-    drag(ArrowTool(), context(surface, size=4), (10, 20), (16, 20))
+    draw(ArrowTool(), context(surface, size=4), (10, 20), (16, 20))
     assert pixel_at(surface, 12, 20) == BLACK_PIXEL
     assert pixel_at(surface, 5, 20) == WHITE_PIXEL
 
@@ -149,28 +157,35 @@ def test_shift_snaps_an_arrow_like_a_line():
 # The polygon
 
 
-def test_a_polygon_lands_when_its_first_corner_is_clicked_again():
+def test_a_polygon_closes_when_its_first_corner_is_clicked_again():
     surface = new_surface(40, 40, WHITE)
     tool, ctx = PolygonTool(), context(surface, fill=True)
     drag(tool, ctx, (5, 5), (35, 5))
     click(tool, ctx, (35, 35))
-    assert tool.in_progress
+    assert not tool.adjustable
     assert pixel_at(surface, 30, 12) == WHITE_PIXEL  # nothing drawn yet
 
     click(tool, ctx, (6, 6))  # within reach of the first corner
 
+    # Closed, and waiting with its corners adjustable until it is landed.
+    assert tool.adjustable
+    assert pixel_at(surface, 30, 12) == WHITE_PIXEL
+
+    tool.finish(ctx)
     assert not tool.in_progress
     assert pixel_at(surface, 30, 12) == RED_PIXEL  # inside the triangle
     assert pixel_at(surface, 10, 30) == WHITE_PIXEL  # outside it
 
 
-def test_clicking_the_last_corner_twice_lands_the_polygon():
+def test_clicking_the_last_corner_twice_closes_the_polygon():
     surface = new_surface(40, 40, WHITE)
     tool, ctx = PolygonTool(), context(surface, fill=True)
     click(tool, ctx, (5, 5))
     click(tool, ctx, (35, 5))
     click(tool, ctx, (35, 35))
     click(tool, ctx, (35, 35))
+    assert tool.adjustable
+    tool.finish(ctx)
     assert not tool.in_progress
     assert pixel_at(surface, 30, 12) == RED_PIXEL
 
@@ -218,14 +233,16 @@ def test_a_cancelled_polygon_leaves_the_image_alone():
 # The curve
 
 
-def test_a_curve_lands_after_its_second_bend():
+def test_a_curve_is_adjustable_after_its_second_bend():
     surface = new_surface(60, 60, WHITE)
     tool, ctx = CurveTool(), context(surface, size=2)
     drag(tool, ctx, (5, 30), (55, 30))
-    assert tool.in_progress
+    assert not tool.adjustable
     drag(tool, ctx, (30, 5), (30, 5))
-    assert tool.in_progress
+    assert not tool.adjustable
     drag(tool, ctx, (30, 5), (30, 5))
+    assert tool.adjustable
+    tool.finish(ctx)
     assert not tool.in_progress
     # Bent up, towards where the drags went, and no longer through the middle.
     assert pixel_at(surface, 30, 30) == WHITE_PIXEL
@@ -246,6 +263,115 @@ def test_a_click_is_no_curve():
     tool = CurveTool()
     click(tool, context(new_surface(20, 20, WHITE)), (10, 10))
     assert not tool.in_progress
+
+
+# Adjusting a shape before it lands
+
+
+def test_a_shape_waits_to_be_adjusted_instead_of_landing():
+    surface = new_surface(40, 40, WHITE)
+    tool, ctx = RectangleTool(), context(surface, size=2)
+    drag(tool, ctx, (5, 5), (25, 25))
+    assert tool.adjustable
+    assert pixel_at(surface, 5, 15) == WHITE_PIXEL  # nothing drawn yet
+    assert set(tool.handles()) == {"nw", "n", "ne", "w", "e", "sw", "s", "se"}
+    assert tool.handles()["se"] == (25, 25)
+    assert tool.frame() == (5, 5, 20, 20)
+
+
+def test_dragging_a_corner_grip_resizes_the_shape():
+    surface = new_surface(40, 40, WHITE)
+    tool, ctx = RectangleTool(), context(surface, size=2)
+    drag(tool, ctx, (5, 5), (15, 15))
+    tool.grab("se", 15, 15)
+    tool.drag_to(35, 35)
+    tool.finish(ctx)
+    assert pixel_at(surface, 35, 20) == BLACK_PIXEL  # the right edge, where it was let go
+    assert pixel_at(surface, 15, 20) == WHITE_PIXEL  # and not where it used to be
+
+
+def test_an_edge_grip_changes_one_side_on_its_own():
+    tool = RectangleTool()
+    drag(tool, context(new_surface(40, 40, WHITE)), (5, 5), (15, 15))
+    tool.grab("e", 15, 10)
+    tool.drag_to(30, 40)
+    assert tool.frame() == (5, 5, 25, 10)
+
+
+def test_shift_on_a_grip_squares_the_shape_up():
+    tool = RectangleTool()
+    drag(tool, context(new_surface(40, 40, WHITE)), (5, 5), (15, 15))
+    tool.grab("se", 15, 15)
+    tool.drag_to(35, 20, constrain=True)
+    assert tool.frame() == (5, 5, 30, 30)
+
+
+def test_dragging_inside_moves_the_whole_shape():
+    tool = RectangleTool()
+    drag(tool, context(new_surface(40, 40, WHITE)), (5, 5), (15, 15))
+    assert tool.contains(10, 10, 1)
+    tool.grab(None, 10, 10)
+    tool.drag_to(20, 25)
+    assert tool.frame() == (15, 20, 10, 10)
+
+
+def test_a_shape_can_be_nudged_a_pixel_at_a_time():
+    tool = RectangleTool()
+    drag(tool, context(new_surface(40, 40, WHITE)), (5, 5), (15, 15))
+    tool.move_by(0, -3)
+    assert tool.frame() == (5, 2, 10, 10)
+
+
+def test_a_press_that_never_moves_places_no_shape():
+    surface = new_surface(20, 20, WHITE)
+    tool, ctx = RectangleTool(), context(surface, size=2)
+    click(tool, ctx, (10, 10))
+    assert not tool.in_progress
+    tool.finish(ctx)
+    assert pixel_at(surface, 10, 10) == WHITE_PIXEL
+
+
+def test_a_line_is_adjusted_by_the_grips_on_its_ends():
+    tool = LineTool()
+    drag(tool, context(new_surface(40, 40, WHITE)), (5, 5), (35, 5))
+    assert tool.handles() == {"start": (5, 5), "end": (35, 5)}
+    assert tool.frame() is None  # no box to draw around a line
+    tool.grab("end", 35, 5)
+    tool.drag_to(35, 25)
+    assert tool.handles() == {"start": (5, 5), "end": (35, 25)}
+
+
+def test_shift_on_a_line_grip_snaps_it_to_45_degrees():
+    tool = LineTool()
+    drag(tool, context(new_surface(40, 40, WHITE)), (5, 5), (35, 5))
+    tool.grab("end", 35, 5)
+    tool.drag_to(25, 24, constrain=True)
+    x, y = tool.handles()["end"]
+    assert round(x - 5) == round(y - 5)  # on the diagonal from the end left alone
+
+
+def test_a_closed_polygon_has_a_grip_on_every_corner():
+    tool, ctx = PolygonTool(), context(new_surface(40, 40, WHITE))
+    drag(tool, ctx, (5, 5), (35, 5))
+    click(tool, ctx, (35, 35))
+    click(tool, ctx, (6, 6))  # closes it
+    assert list(tool.handles().values()) == tool.points
+    assert tool.contains(25, 12, 1)  # the inside is what moves it
+
+    tool.grab("corner-1", 35, 5)
+    tool.drag_to(20, 2)
+    assert tool.points[1] == (20, 2)
+
+
+def test_a_curve_has_a_grip_on_each_end_and_each_bend():
+    tool, ctx = CurveTool(), context(new_surface(60, 60, WHITE))
+    drag(tool, ctx, (5, 30), (55, 30))
+    drag(tool, ctx, (20, 5), (20, 5))
+    drag(tool, ctx, (40, 55), (40, 55))
+    assert set(tool.handles()) == {"start", "end", "bend1", "bend2"}
+    tool.grab("bend1", 20, 5)
+    tool.drag_to(20, 15)
+    assert tool.handles()["bend1"] == (20, 15)
 
 
 # The canvas, placing a shape over several clicks
@@ -354,3 +480,72 @@ def test_the_pointer_between_clicks_is_the_side_still_to_come(canvas):
     canvas_drag(canvas, (10, 10), (50, 10))
     canvas._on_motion(None, 50, 50)
     assert canvas.active_tool.shape._hover == (50, 50)
+
+
+def test_a_shape_waits_on_the_canvas_until_it_is_landed(canvas):
+    canvas.select_shape("rectangle")
+    document = canvas.document
+    canvas_drag(canvas, (10, 10), (40, 40))
+    assert canvas.shape_in_progress
+    assert not document.can_undo  # the drag drew nothing
+
+    assert canvas.finish_shape()
+    assert pixel_at(document.surface, 10, 25) == BLACK_PIXEL
+    document.undo()
+    assert pixel_at(document.surface, 10, 25) == WHITE_PIXEL
+
+
+def test_dragging_a_grip_on_the_canvas_resizes_the_shape(canvas):
+    canvas.select_shape("rectangle")
+    canvas_drag(canvas, (10, 10), (30, 30))
+    assert canvas._handle_at(30, 30) == "se"
+
+    canvas_drag(canvas, (30, 30), (50, 50))
+    canvas.finish_shape()
+    assert pixel_at(canvas.document.surface, 50, 30) == BLACK_PIXEL  # the edge, dragged out
+    assert pixel_at(canvas.document.surface, 30, 20) == WHITE_PIXEL  # inside, where it was
+
+
+def test_clicking_away_from_a_shape_lands_it_and_draws_nothing(canvas):
+    canvas.select_shape("rectangle")
+    canvas_drag(canvas, (5, 5), (25, 25))
+    canvas_drag(canvas, (55, 55), (55, 55))
+    assert not canvas.shape_in_progress
+    assert pixel_at(canvas.document.surface, 5, 15) == BLACK_PIXEL
+    assert pixel_at(canvas.document.surface, 55, 55) == WHITE_PIXEL
+
+
+def test_dragging_away_from_a_shape_lands_it_and_draws_the_next(canvas):
+    canvas.select_shape("rectangle")
+    canvas_drag(canvas, (5, 5), (25, 25))
+    # Well clear of the grips around the first one, which a press would grab.
+    canvas_drag(canvas, (45, 45), (57, 57))
+    # The first one landed, and the second is the one now waiting.
+    assert canvas.shape_in_progress
+    assert pixel_at(canvas.document.surface, 5, 15) == BLACK_PIXEL
+    assert pixel_at(canvas.document.surface, 45, 50) == WHITE_PIXEL
+
+    canvas.finish_shape()
+    assert pixel_at(canvas.document.surface, 45, 50) == BLACK_PIXEL
+    canvas.document.undo()
+    # Two shapes, two steps to undo.
+    assert pixel_at(canvas.document.surface, 45, 50) == WHITE_PIXEL
+    assert pixel_at(canvas.document.surface, 5, 15) == BLACK_PIXEL
+
+
+def test_the_arrow_keys_nudge_a_shape_that_has_not_landed(canvas):
+    canvas.select_shape("rectangle")
+    canvas_drag(canvas, (10, 10), (30, 30))
+    for _ in range(5):
+        assert canvas._on_key_pressed(None, Gdk.KEY_Right, 0, Gdk.ModifierType(0))
+    canvas.finish_shape()
+    assert pixel_at(canvas.document.surface, 15, 20) == BLACK_PIXEL  # the left edge, five on
+    assert pixel_at(canvas.document.surface, 10, 20) == WHITE_PIXEL
+
+
+def test_a_colour_picked_while_a_shape_waits_lands_with_it(canvas):
+    canvas.select_shape("rectangle")
+    canvas_drag(canvas, (10, 10), (40, 40))
+    canvas.colors.primary = rgba("#ff0000")
+    canvas.finish_shape()
+    assert pixel_at(canvas.document.surface, 10, 25) == RED_PIXEL

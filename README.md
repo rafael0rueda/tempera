@@ -10,7 +10,7 @@ preference and accent colour automatically, and works entirely offline.
 
 - Pencil, brush, airbrush and eraser, which can rub back to transparency
 - Nine shapes — line, curve, arrow, rectangle, rounded rectangle, ellipse, triangle, star
-  and polygon — filled or outlined
+  and polygon — filled or outlined, and resized or moved by their grips before they land
 - Text in any installed font, flood fill with a tolerance, and a colour picker
 - Colours of any opacity, with the ones picked lately kept beside the palette
 - Rectangular and free-form (lasso) selection to move, copy, cut, stretch or crop to
