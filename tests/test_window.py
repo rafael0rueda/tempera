@@ -93,7 +93,7 @@ def test_palette_moves(window, position, orientation):
     assert visible == {position}
 
 
-@pytest.mark.parametrize("position, columns", [("bottom", 10), ("left", 4), ("right", 2)])
+@pytest.mark.parametrize("position, columns", [("bottom", 20), ("left", 4), ("right", 2)])
 def test_palette_grid_fits_where_it_is(window, position, columns):
     window.activate_action("win.palette-position", GLib.Variant.new_string(position))
     grid = window._color_bar._grid
@@ -541,6 +541,7 @@ def test_the_tool_sizes_colours_and_window_size_are_remembered(application, wind
     window.canvas.brush_size = 12
     window.canvas.fill_tolerance = 77
     window.colors.primary = rgba("#ff0000")
+    window.colors.remember(rgba("#ff0000"))
     window.set_default_size(900, 700)
     window._last_jpeg_quality = 55
 

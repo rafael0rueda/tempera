@@ -19,6 +19,10 @@ class EraserTool(FreehandTool):
     antialias = False
     line_cap = cairo.LINE_CAP_SQUARE
 
+    def colors_used(self, ctx: ToolContext):
+        # Rubbing out is not painting with the background colour.
+        return ()
+
     def stroke_color(self, ctx: ToolContext):
         # Like Paint, the eraser lays down the background (secondary) color,
         # unless it has been asked to rub back to nothing at all.

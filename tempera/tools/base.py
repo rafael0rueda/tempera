@@ -115,6 +115,10 @@ class Tool:
     def draw_preview(self, cr: cairo.Context, ctx: ToolContext) -> None:
         pass
 
+    def colors_used(self, ctx: ToolContext) -> tuple[Gdk.RGBA, ...]:
+        """The colours what just landed was painted in, for the recent colours."""
+        return ()
+
     def repeat(self, ctx: ToolContext) -> None:
         pass
 
@@ -173,6 +177,9 @@ class FreehandTool(Tool):
     """Draws a continuous stroke straight onto the document surface."""
 
     sized = True
+
+    def colors_used(self, ctx: ToolContext) -> tuple[Gdk.RGBA, ...]:
+        return (self.stroke_color(ctx),)
 
     antialias = True
     line_cap = cairo.LINE_CAP_ROUND

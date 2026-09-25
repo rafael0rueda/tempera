@@ -773,9 +773,11 @@ class Canvas(Gtk.DrawingArea):
         """Draw a polygon or curve still being placed into the image, as one step to undo."""
         if not self.active_tool.in_progress or self.is_dragging:
             return False
+        context = self._make_context(self._shape_button)
         self._document.begin_change()
-        self.active_tool.finish(self._make_context(self._shape_button))
+        self.active_tool.finish(context)
         self._document.finish_change()
+        self.colors.remember(*self.active_tool.colors_used(context))
         self.queue_draw()
         self.emit("floating-changed")
         return True
@@ -855,8 +857,10 @@ class Canvas(Gtk.DrawingArea):
         # Only what the input method has committed lands; a half-composed
         # word does not.
         surface = text.render_surface()
-        if surface is not None and self._document.paste(surface, round(text.x), round(text.y)):
-            self.emit("message", CUT_OFF_MESSAGE)
+        if surface is not None:
+            if self._document.paste(surface, round(text.x), round(text.y)):
+                self.emit("message", CUT_OFF_MESSAGE)
+            self.colors.remember(text.color)
         self._end_typing()
         return True
 
@@ -1381,6 +1385,9 @@ class Canvas(Gtk.DrawingArea):
         self.active_tool.release(self._drag_context, x, y)
         if self.active_tool.mutates:
             self._document.finish_change()
+            # A shape only counts once it lands.
+            if not self.active_tool.in_progress:
+                self.colors.remember(*self.active_tool.colors_used(self._drag_context))
         self._drag_origin = None
         self._drag_context = None
         if self.active_tool.in_progress:

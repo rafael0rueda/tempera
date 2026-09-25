@@ -66,8 +66,6 @@ def test_bigger_sizes_grow_icons_and_controls():
     assert "-gtk-icon-size: 32px" in interface_size.icon_stylesheet(200)
     controls = interface_size.control_stylesheet(200)
     assert ".tempera-tool { min-width: 76px; min-height: 76px; }" in controls
-    assert "min-width: 44px" in controls  # palette swatches
-    assert "min-width: 64px" in controls  # the current colours
     # The slider knob stays centred on its trough as it grows.
     assert "min-width: 40px; min-height: 40px; margin: -18px;" in controls
 
@@ -127,10 +125,10 @@ def test_tool_buttons_and_swatches_are_drawn_bigger(window):
 
     window._set_interface_size(200)
 
-    # The sizes the stylesheet gives them at 200%.
+    # The tool from the stylesheet, the palette (on the right) from the code.
     assert wait_for(lambda: width(tool) >= 76)
     assert width(swatch) >= 44
-    assert width(current) >= 64
+    assert width(current) >= 56
 
 
 def test_preferences_open_from_the_menu_action(window):

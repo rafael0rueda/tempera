@@ -751,6 +751,7 @@ class TemperaWindow(Adw.ApplicationWindow):
         self._status_bar.set_size_request(-1, scaled(STATUS_BAR_HEIGHT))
         for scale in (self._size_scale, self._tolerance_scale, self._density_scale):
             scale.set_size_request(scaled(OPTION_SCALE_WIDTH), -1)
+        self._color_bar.sync_size()
         self.canvas.sync_interface_size()
 
     def _step_size(self, step: int) -> None:

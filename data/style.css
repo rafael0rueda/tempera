@@ -87,6 +87,13 @@
   background: alpha(currentColor, 0.1);
 }
 
+/* The primary and secondary colours overlap; a ring in the panel's colour
+   keeps the one in front apart from the one behind. */
+.tempera-swatch-current {
+  border-radius: 7px;
+  box-shadow: 0 0 0 2px @secondary_sidebar_bg_color, 0 0 0 3px alpha(currentColor, 0.18);
+}
+
 /* Small enough for the 32 px status bar. */
 .tempera-status-button {
   min-width: 24px;

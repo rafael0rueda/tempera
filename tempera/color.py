@@ -5,22 +5,25 @@ from __future__ import annotations
 
 import math
 
-from gi.repository import Gdk, GObject, Gtk
+from gi.repository import Gdk, GObject, Graphene, Gsk, Gtk
+
+from . import interface_size
 from .i18n import _
 
-# Named, because a swatch a screen reader can only call "#c01c28" is no use.
+# The GNOME palette, twenty colours with no two alike. Named, because a swatch
+# a screen reader can only call "#c01c28" is no use.
 PALETTE = [
-    (_("Black"), "#000000"), (_("Grey"), "#7a7a7a"), (_("Red"), "#c01c28"),
-    (_("Orange"), "#e66100"), (_("Yellow"), "#f5c211"), (_("Green"), "#33d17a"),
-    (_("Teal"), "#2ec27e"), (_("Blue"), "#3584e4"), (_("Dark blue"), "#1c71d8"),
+    (_("Black"), "#000000"), (_("Grey"), "#77767b"), (_("Red"), "#c01c28"),
+    (_("Orange"), "#e66100"), (_("Yellow"), "#f5c211"), (_("Green"), "#2ec27e"),
+    (_("Dark green"), "#26a269"), (_("Blue"), "#3584e4"), (_("Dark blue"), "#1c71d8"),
     (_("Purple"), "#9141ac"), (_("Brown"), "#986a44"), (_("Dark brown"), "#63452c"),
     (_("White"), "#ffffff"), (_("Light grey"), "#deddda"), (_("Light red"), "#f66151"),
-    (_("Light orange"), "#ffbe6f"), (_("Light yellow"), "#f9f06b"),
+    (_("Light orange"), "#ffbe6f"), (_("Light yellow"), "#f8e45c"),
     (_("Light green"), "#8ff0a4"), (_("Light blue"), "#99c1f1"), (_("Pink"), "#dc8add"),
 ]
 
 
-MAX_RECENT_COLORS = 10
+MAX_RECENT_COLORS = 6
 
 
 def rgba(spec: str) -> Gdk.RGBA:
@@ -38,8 +41,8 @@ class ColorState(GObject.Object):
         super().__init__()
         self._primary = rgba("#000000")
         self._secondary = rgba("#ffffff")
-        # Colors picked lately, newest first, so a mixed color is a click away
-        # the next time it is wanted.
+        # Colors painted with lately, newest first, so a mixed color is a click
+        # away the next time it is wanted.
         self.recent: list[Gdk.RGBA] = []
 
     @property
@@ -49,7 +52,6 @@ class ColorState(GObject.Object):
     @primary.setter
     def primary(self, value: Gdk.RGBA) -> None:
         self._primary = value
-        self._remember(value)
         self.emit("changed")
 
     @property
@@ -59,12 +61,16 @@ class ColorState(GObject.Object):
     @secondary.setter
     def secondary(self, value: Gdk.RGBA) -> None:
         self._secondary = value
-        self._remember(value)
         self.emit("changed")
 
-    def _remember(self, color: Gdk.RGBA) -> None:
-        kept = [existing for existing in self.recent if not existing.equal(color)]
-        self.recent = [color] + kept[: MAX_RECENT_COLORS - 1]
+    def remember(self, *used: Gdk.RGBA) -> None:
+        """Put colours just painted with at the front of the recent ones, the first frontmost."""
+        if not used:
+            return
+        for color in reversed(used):
+            kept = [existing for existing in self.recent if not existing.equal(color)]
+            self.recent = [color.copy()] + kept[: MAX_RECENT_COLORS - 1]
+        self.emit("changed")
 
     def for_button(self, button: int) -> Gdk.RGBA:
         return self._secondary if button == Gdk.BUTTON_SECONDARY else self._primary
@@ -114,6 +120,10 @@ class Swatch(Gtk.Button):
         self.set_tooltip_text(label)
         self.update_property([Gtk.AccessibleProperty.LABEL], [label])
 
+    def set_swatch_size(self, size: int) -> None:
+        self._area.set_content_width(size)
+        self._area.set_content_height(size)
+
     @property
     def color(self) -> Gdk.RGBA:
         return self._color
@@ -124,19 +134,16 @@ class Swatch(Gtk.Button):
         self._area.queue_draw()
 
     def _draw(self, area, cr, width, height, *_args):
-        radius = 4
-        cr.new_sub_path()
-        cr.arc(width - radius, radius, radius, -1.5708, 0)
-        cr.arc(width - radius, height - radius, radius, 0, 1.5708)
-        cr.arc(radius, height - radius, radius, 1.5708, 3.1416)
-        cr.arc(radius, radius, radius, 3.1416, 4.7124)
-        cr.close_path()
-
+        radius = max(3, min(width, height) / 4)
+        _rounded_rect(cr, 0, 0, width, height, radius)
         cr.set_source_rgba(self._color.red, self._color.green, self._color.blue, self._color.alpha)
-        cr.fill_preserve()
+        cr.fill()
 
-        outline = area.get_color()
-        cr.set_source_rgba(outline.red, outline.green, outline.blue, 0.25)
+        # A faint line just inside the edge, so black on a dark panel and white
+        # on a light one still read as squares.
+        edge = area.get_color()
+        _rounded_rect(cr, 0.5, 0.5, width - 1, height - 1, radius - 0.5)
+        cr.set_source_rgba(edge.red, edge.green, edge.blue, 0.18)
         cr.set_line_width(1)
         cr.stroke()
 
@@ -191,42 +198,89 @@ class ColorChip(Gtk.DrawingArea):
             cr.stroke()
 
 
+class ColorWell(Gtk.Widget):
+    """The primary and secondary colours as two overlapping squares, the primary in front.
+
+    Clicking either opens the colour dialog for it.
+    """
+
+    def __init__(self, colors: ColorState):
+        super().__init__()
+        self.primary = Swatch(colors.primary, size=28)
+        self.secondary = Swatch(colors.secondary, size=28)
+        # The later child is the one in front, both for drawing and for
+        # which of the two a click on the overlap reaches.
+        for swatch in (self.secondary, self.primary):
+            swatch.add_css_class("tempera-swatch-current")
+            swatch.set_parent(self)
+
+    def do_dispose(self) -> None:
+        self.secondary.unparent()
+        self.primary.unparent()
+
+    def set_swatch_size(self, size: int) -> None:
+        self.primary.set_swatch_size(size)
+        self.secondary.set_swatch_size(size)
+        self.queue_resize()
+
+    def _side(self) -> int:
+        return self.primary.measure(Gtk.Orientation.HORIZONTAL, -1)[1]
+
+    def do_get_request_mode(self) -> Gtk.SizeRequestMode:
+        return Gtk.SizeRequestMode.CONSTANT_SIZE
+
+    def do_measure(self, orientation: Gtk.Orientation, for_size: int):
+        # The two squares overlap by a little over a third of their side.
+        size = round(self._side() * 11 / 7)
+        return size, size, -1, -1
+
+    def do_size_allocate(self, width: int, height: int, baseline: int) -> None:
+        side = self._side()
+        self.primary.allocate(side, side, -1, None)
+        point = Graphene.Point()
+        point.init(width - side, height - side)
+        self.secondary.allocate(side, side, -1, Gsk.Transform.new().translate(point))
+
+
 class PaletteLayout:
-    WIDE = "wide"  # a row along the bottom bar
+    WIDE = "wide"  # a row along the bottom
     NARROW = "narrow"  # a column beside the canvas
     BLOCK = "block"  # a block under the tools in the sidebar
 
 
+# Per layout: palette columns, and the sizes of a palette swatch and of the
+# colour well's squares, at the default interface size.
+_LAYOUTS = {
+    PaletteLayout.WIDE: (len(PALETTE), 24, 26),
+    PaletteLayout.NARROW: (2, 22, 28),
+    PaletteLayout.BLOCK: (4, 18, 26),
+}
+
+
 class ColorBar(Gtk.Box):
-    """Current colors, the fixed palette, and a custom color picker."""
+    """Current colors, the fixed palette, and the colours used lately."""
 
     def __init__(self, colors: ColorState):
-        super().__init__(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        super().__init__(orientation=Gtk.Orientation.HORIZONTAL)
         self.colors = colors
 
-        self._primary_swatch = Swatch(colors.primary, size=32)
-        self._secondary_swatch = Swatch(colors.secondary, size=32)
-        # Sized apart from the palette when the interface is drawn bigger.
-        self._primary_swatch.add_css_class("tempera-swatch-current")
-        self._secondary_swatch.add_css_class("tempera-swatch-current")
+        self._well = ColorWell(colors)
+        self._primary_swatch = self._well.primary
+        self._secondary_swatch = self._well.secondary
         self._primary_swatch.connect("picked", lambda *_args: self.choose(primary=True))
         self._secondary_swatch.connect("picked", lambda *_args: self.choose(primary=False))
-
-        current = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
-        current.set_halign(Gtk.Align.CENTER)
-        current.append(self._primary_swatch)
-        current.append(self._secondary_swatch)
 
         # The window gives it a tooltip naming the current shortcut.
         self.swap_button = Gtk.Button(icon_name="tempera-swap-colors-symbolic")
         self.swap_button.add_css_class("flat")
+        self.swap_button.add_css_class("dim-label")
         self.swap_button.set_halign(Gtk.Align.CENTER)
         self.swap_button.set_valign(Gtk.Align.CENTER)
         self.swap_button.connect("clicked", lambda *_args: colors.swap())
 
         # The current colors and the swap button, side by side or stacked.
-        self._current_row = Gtk.Box(spacing=12, halign=Gtk.Align.CENTER)
-        self._current_row.append(current)
+        self._current_row = Gtk.Box(spacing=8, halign=Gtk.Align.CENTER)
+        self._current_row.append(self._well)
         self._current_row.append(self.swap_button)
         self.append(self._current_row)
 
@@ -238,66 +292,85 @@ class ColorBar(Gtk.Box):
             self._palette_swatches.append(swatch)
         self.append(self._grid)
 
-        # Shown once something has been picked, and only then.
-        self._recent_grid = Gtk.Grid(row_spacing=4, column_spacing=4, visible=False)
+        # Shown once something has been painted with, and only then.
+        self._recent_separator = Gtk.Separator(
+            orientation=Gtk.Orientation.VERTICAL, margin_top=16, margin_bottom=16
+        )
+        self._recent_caption = Gtk.Label(label=_("Recent"))
+        self._recent_caption.add_css_class("caption")
+        self._recent_caption.add_css_class("dim-label")
+        self._recent_grid = Gtk.Grid(row_spacing=4, column_spacing=4)
         self._recent_swatches: list[Swatch] = []
-        self.append(self._recent_grid)
+        for widget in (self._recent_separator, self._recent_caption, self._recent_grid):
+            self.append(widget)
 
         self.set_layout(PaletteLayout.WIDE)
         colors.connect("changed", self._sync)
         self._sync()
 
     def set_layout(self, layout: str) -> None:
-        """Lay out for the bottom bar, a narrow strip beside the canvas, or the tool sidebar."""
+        """Lay out for a row along the bottom, a column beside the canvas, or the tool sidebar."""
+        self._layout = layout
         wide = layout == PaletteLayout.WIDE
         self.set_orientation(Gtk.Orientation.HORIZONTAL if wide else Gtk.Orientation.VERTICAL)
+        self.set_spacing(14 if wide else 10)
         # Wherever it sits, the panel brings its own padding.
         self.set_valign(Gtk.Align.CENTER if wide else Gtk.Align.START)
+        self.set_halign(Gtk.Align.START if wide else Gtk.Align.CENTER)
 
         stacked = layout == PaletteLayout.NARROW
         self._current_row.set_orientation(
             Gtk.Orientation.VERTICAL if stacked else Gtk.Orientation.HORIZONTAL
         )
-        self._grid.set_halign(Gtk.Align.FILL if wide else Gtk.Align.CENTER)
-        self._grid.set_valign(Gtk.Align.CENTER if wide else Gtk.Align.START)
+        for grid in (self._grid, self._recent_grid):
+            grid.set_halign(Gtk.Align.START if wide else Gtk.Align.CENTER)
+            grid.set_valign(Gtk.Align.CENTER)
 
-        self._recent_grid.set_halign(self._grid.get_halign())
-        self._recent_grid.set_valign(self._grid.get_valign())
-
-        self._columns = {
-            PaletteLayout.WIDE: 10, PaletteLayout.NARROW: 2, PaletteLayout.BLOCK: 4
-        }[layout]
+        self._columns = _LAYOUTS[layout][0]
         for swatch in self._palette_swatches:
             if swatch.get_parent() is not None:
                 self._grid.remove(swatch)
         for index, swatch in enumerate(self._palette_swatches):
             self._grid.attach(swatch, index % self._columns, index // self._columns, 1, 1)
+        self.sync_size()
         self._refresh_recent()
+
+    def sync_size(self) -> None:
+        """Size the swatches for where the palette is, at the interface size now chosen."""
+        _columns, swatch, well = _LAYOUTS[self._layout]
+        size = interface_size.scaled(swatch)
+        for each in self._palette_swatches + self._recent_swatches:
+            each.set_swatch_size(size)
+        self._well.set_swatch_size(interface_size.scaled(well))
 
     def refresh(self) -> None:
         """Take the colours afresh, after they have been restored from settings."""
         self._sync()
 
     def _refresh_recent(self) -> None:
-        """Lay the recently picked colors out below the fixed palette."""
+        """Lay the colours used lately out after the fixed palette."""
         recent = self.colors.recent
+        self._recent_separator.set_visible(bool(recent) and self._layout == PaletteLayout.WIDE)
+        self._recent_caption.set_visible(bool(recent))
         self._recent_grid.set_visible(bool(recent))
+        size = interface_size.scaled(_LAYOUTS[self._layout][1])
         while len(self._recent_swatches) < len(recent):
-            swatch = Swatch(recent[0])
+            swatch = Swatch(recent[0], size=size)
             swatch.connect("picked", self._on_palette_picked)
             self._recent_swatches.append(swatch)
+        # Along the bottom they make one row, as the palette does.
+        columns = MAX_RECENT_COLORS if self._layout == PaletteLayout.WIDE else self._columns
         for index, swatch in enumerate(self._recent_swatches):
             if swatch.get_parent() is not None:
                 self._recent_grid.remove(swatch)
             if index >= len(recent):
                 continue
             swatch.color = recent[index]
+            swatch.set_swatch_size(size)
             swatch.set_label_text(
                 _("Recent colour, {color}").format(color=describe(recent[index]))
             )
-            self._recent_grid.attach(
-                swatch, index % self._columns, index // self._columns, 1, 1
-            )
+            self._recent_grid.attach(swatch, index % columns, index // columns, 1, 1)
 
     def _on_palette_picked(self, swatch: Swatch, button: int) -> None:
         if button == Gdk.BUTTON_SECONDARY:

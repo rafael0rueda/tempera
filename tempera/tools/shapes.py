@@ -51,6 +51,11 @@ class ShapesTool(Tool):
     def fillable(self) -> bool:
         return self.shape.fillable
 
+    def colors_used(self, ctx):
+        fill = ctx.fill_shapes and self.fillable
+        outline = ctx.outline_shapes or not fill
+        return tuple(color for color, used in ((ctx.color, outline), (ctx.alt_color, fill)) if used)
+
     def press(self, ctx, x, y):
         self.shape.press(ctx, x, y)
 
