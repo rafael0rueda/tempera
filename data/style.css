@@ -30,6 +30,13 @@
   padding: 0 12px;
 }
 
+/* The image size under the title. libadwaita's "smaller" size is too small
+   to read comfortably, and some fonts lose the top row of their digits at
+   it; this matches the status bar. */
+windowtitle .subtitle {
+  font-size: 0.9em;
+}
+
 .tempera-status-bar {
   padding: 0 10px 0 14px;
   font-size: 0.9em;
