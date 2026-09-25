@@ -4,7 +4,7 @@ A straightforward raster paint application for Fedora / GNOME, in the spirit of 
 classic Windows Paint. Built with GTK4 and libadwaita, it follows the system light/dark
 preference and accent colour automatically, and works entirely offline.
 
-![Tempera's main window: the tool palette on the left with the brush selected, a painted landscape with a house, a tree and the sun on the canvas, and the colour palette with recently picked colours, zoom level and canvas size along the bottom](data/screenshots/main-window.png)
+![Tempera's main window: the brush's options in a bar under the header, the tools on the left with the brush selected, a painted landscape with a house, a tree and the sun on the canvas, and the colour palette with the recently used colours in a column on the right](data/screenshots/main-window.png)
 
 ## Features
 
@@ -12,7 +12,7 @@ preference and accent colour automatically, and works entirely offline.
 - Nine shapes — line, curve, arrow, rectangle, rounded rectangle, ellipse, triangle, star
   and polygon — filled or outlined, and resized or moved by their grips before they land
 - Text in any installed font, flood fill with a tolerance, and a colour picker
-- Colours of any opacity, with the ones picked lately kept beside the palette
+- Colours of any opacity, with the ones painted with lately kept beside the palette
 - Rectangular and free-form (lasso) selection to move, copy, cut, stretch or crop to
 - Paste screenshots and drop images onto the canvas; resize, rotate or flip the image
 - Zoom from 10% to 800% with crisp pixels and an optional pixel grid

@@ -799,8 +799,10 @@ class TemperaWindow(Adw.ApplicationWindow):
         self._options_bar.set_size_request(-1, scaled(OPTIONS_BAR_HEIGHT))
         self._palette_bar.set_size_request(-1, scaled(PALETTE_BAR_HEIGHT))
         self._status_bar.set_size_request(-1, scaled(STATUS_BAR_HEIGHT))
+        # The sliders keep their length, only their knobs grow, so the options
+        # bar still fits a normal window at a bigger size.
         for scale in (self._size_scale, self._tolerance_scale, self._density_scale):
-            scale.set_size_request(scaled(OPTION_SCALE_WIDTH), -1)
+            scale.set_size_request(OPTION_SCALE_WIDTH, -1)
         self._color_bar.sync_size()
         self.canvas.sync_interface_size()
 

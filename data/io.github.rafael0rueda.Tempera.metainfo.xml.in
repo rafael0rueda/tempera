@@ -19,7 +19,7 @@
       <li>Nine shapes — line, curve, arrow, rectangle, rounded rectangle, ellipse, triangle, star and polygon — filled or outlined, with Shift for squares, circles and 45° lines, and grips to resize or move each one before it lands</li>
       <li>Text in any font installed on the system</li>
       <li>Flood fill with an adjustable tolerance, and a colour picker</li>
-      <li>Colours of any opacity, with the ones picked lately kept beside the palette</li>
+      <li>Colours of any opacity, with the ones painted with lately kept beside the palette</li>
       <li>Rectangular and free-form selection to move, copy, cut, stretch or crop to</li>
       <li>Paste screenshots and drop images straight onto the canvas</li>
       <li>Resize the picture, or the canvas around it, and rotate or flip it</li>
@@ -29,7 +29,7 @@
       <li>Print, fitted to the page or at actual size, with a preview</li>
       <li>A bigger interface, from 100% to 200%, for text, buttons and icons alike</li>
       <li>Keyboard shortcuts you can change to suit you, and every action reachable from the keyboard</li>
-      <li>A colour palette along the bottom, under the tools or beside the canvas</li>
+      <li>A colour palette beside the canvas, under the tools or along the bottom</li>
     </ul>
     <p>
       Tempera works entirely offline: it never connects to the network and keeps every
@@ -64,15 +64,15 @@
   <screenshots>
     <screenshot type="default">
       <caption>Painting a landscape with the brush</caption>
-      <image type="source" width="1120" height="800">https://raw.githubusercontent.com/rafael0rueda/tempera/v1.2.0/data/screenshots/main-window.png</image>
+      <image type="source" width="1120" height="800">https://raw.githubusercontent.com/rafael0rueda/tempera/v1.3.0/data/screenshots/main-window.png</image>
     </screenshot>
     <screenshot>
-      <caption>The dark style, with a free-form selection drawn with the lasso</caption>
-      <image type="source" width="1120" height="800">https://raw.githubusercontent.com/rafael0rueda/tempera/v1.2.0/data/screenshots/dark-style.png</image>
+      <caption>The dark style, with a selection drawn by hand with Free Select</caption>
+      <image type="source" width="1120" height="800">https://raw.githubusercontent.com/rafael0rueda/tempera/v1.3.0/data/screenshots/dark-style.png</image>
     </screenshot>
     <screenshot>
-      <caption>A star waiting with grips to resize it, at a bigger interface size</caption>
-      <image type="source" width="1120" height="800">https://raw.githubusercontent.com/rafael0rueda/tempera/v1.2.0/data/screenshots/interface-size.png</image>
+      <caption>A filled star waiting with grips to resize it, at a bigger interface size</caption>
+      <image type="source" width="1120" height="800">https://raw.githubusercontent.com/rafael0rueda/tempera/v1.3.0/data/screenshots/interface-size.png</image>
     </screenshot>
   </screenshots>
   <categories>
@@ -80,6 +80,22 @@
     <category>RasterGraphics</category>
   </categories>
   <releases>
+    <release version="1.3.0" date="2026-09-25">
+      <description>
+        <p>A new layout that follows GNOME's design, with less clutter around the picture.</p>
+        <p>New features:</p>
+        <ul>
+          <li>The options of the tool in hand sit in a bar above the canvas, which names the tool and shows only what applies to it</li>
+          <li>Shapes have separate Outline and Fill buttons, so a shape can be all fill, and the nine shapes are one click away in a row</li>
+          <li>The primary and secondary colours overlap as two squares, the palette is the twenty GNOME colours, and the paint tools show the primary colour on their icons</li>
+          <li>Recent colours are the last six painted with, rather than every colour clicked</li>
+          <li>The palette starts on the right, and can still go under the tools or along the bottom</li>
+          <li>The header shows the image size, and a status bar has the pointer position, the selection and image sizes and zoom buttons</li>
+          <li>The main menu has rows of buttons to rotate, flip and zoom; Shift+Ctrl+R turns the image counterclockwise</li>
+          <li>New icons throughout, and the tools are called Color Picker, Rectangle Select and Free Select</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.2.0" date="2026-09-20">
       <description>
         <p>Shapes can now be put right before they land.</p>

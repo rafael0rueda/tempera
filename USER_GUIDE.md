@@ -36,8 +36,8 @@ installing and building it, see the [README](README.md).
 | Rectangle Select | `S` | Rectangle to move, copy or cut                                    |
 | Free Select   | `Shift+S` | Any shape drawn by hand, to move, copy or cut                  |
 
-The **Shapes** tool's options hold a grid of shapes, and each shape has its own key,
-which also picks up the tool.
+With the **Shapes** tool in hand, the bar above the canvas shows the nine shapes in a
+row. Each shape also has its own key, which picks up the tool as well.
 
 | Shape             | Key | How to draw it                                                   |
 | ----------------- | --- | ---------------------------------------------------------------- |
@@ -53,8 +53,10 @@ which also picks up the tool.
 
 Every shape can be resized and moved after it is drawn, before it lands; see below.
 
-**Fill shape** fills the closed shapes with the secondary colour, which the swatch
-beside it shows; click the swatch to change it. The polygon and the
+**Outline** draws the edge in the primary colour and **Fill** fills the inside with the
+secondary colour; each button shows the colour it uses. Turn on either or both — a
+shape with only **Fill** has no edge line at all. At least one stays on: turning off the
+last one turns the other on. The line, the arrow and the curve are all outline. The polygon and the
 curve stay open for more clicks until they are finished: `Enter` lands one early, `Esc`
 drops it.
 
@@ -69,25 +71,30 @@ put right before it becomes pixels:
   to 45°, the same way drawing it does.
 - Dragging anywhere inside the shape slides it somewhere else, and the arrow keys nudge
   it a pixel at a time — ten with `Shift`.
-- The colour, size and **Fill shape** apply to the shape as it waits, so a rectangle can
-  be recoloured or filled before it lands.
+- The colour, size, **Outline** and **Fill** apply to the shape as it waits, so a
+  rectangle can be recoloured or filled before it lands.
 
 `Enter` lands the shape, `Esc` drops it, and so does `Ctrl+Z`. Picking another tool or
 shape lands it, as does saving, and so does drawing somewhere else: the drag that starts
 the next shape lands the one waiting. However it lands, it is a single step to undo.
 
-Left click draws with the primary colour, right click with the secondary one. Both
-colour swatches in the bottom bar work the same way: left click sets the primary
-colour, right click the secondary. `X` swaps them.
+Left click draws with the primary colour, right click with the secondary one. The
+palette swatches work the same way: left click sets the primary colour, right click the
+secondary. `X`, or the arrows beside the two current colours, swaps them. The paint
+tools show the primary colour on their icons: the pencil's point, the brush's bristles,
+the spray, the drip and so on.
 
-Clicking either of the two large swatches opens the colour dialog, where a colour can
-be typed in as a hex value and given an opacity: a see-through colour paints over what
-is already there instead of replacing it. Colours picked lately gather in a second row
-beside the fixed palette, so a mixed colour is one click away next time.
+The two current colours overlap, the primary in front. Clicking either opens the colour
+dialog, where a colour can be typed in as a hex value and given an opacity: a
+see-through colour paints over what is already there instead of replacing it. The last
+six colours you painted with gather under **Recent**, so a mixed colour is one click away
+next time. A colour counts once something has been painted with it — a stroke, a fill,
+a shape as it lands, text — not when it is only picked; the eraser does not count.
 
-Each tool brings its own options under the size slider: the shapes and **Fill shape**
-for the Shapes tool, **Density** for the airbrush, **Erase to nothing** for the eraser,
-a tolerance for the fill, and the font for the text tool.
+The bar above the canvas names the tool in hand and shows only what applies to it: the
+**Size** for the pencil, brush, airbrush, eraser, shapes and text, then the shapes with
+**Outline** and **Fill** for the Shapes tool, **Density** for the airbrush, **Erase to
+nothing** for the eraser, a **Tolerance** for the fill, and the font for the text tool.
 
 | Action                      | Shortcut                                         |
 | --------------------------- | ------------------------------------------------ |
@@ -168,12 +175,14 @@ text landed first. Tempera remembers the fit, and the printer and paper last use
 
 `Ctrl`+scroll zooms around the pointer, so whatever is under it stays put; `Ctrl++` and
 `Ctrl+-` step through the usual levels between 10% and 800%, and `Ctrl+0` — or clicking
-the zoom level in the bottom bar — goes back to 100%. `Ctrl+9` fits the whole image in
+the zoom level in the status bar — goes back to 100%. `Ctrl+9` fits the whole image in
 the window, which is also how an image too large for the window opens. Drag with the
-middle mouse button to move around a zoomed image, or pinch on a touchpad to zoom. The same three are in the main
-menu, and scrolling over the zoom level in the bottom bar steps it up or down. Every tool keeps working at any zoom, and from 100% up each image pixel shows as
-a crisp square, which makes pixel-level touch-ups with the pencil easy. The bottom bar
-also shows which image pixel the pointer is over.
+middle mouse button to move around a zoomed image, or pinch on a touchpad to zoom. The
+status bar has `−` and `+` buttons either side of the zoom level, and scrolling over the
+level steps it up or down; the main menu has the same row, with zoom to fit beside it.
+Every tool keeps working at any zoom, and from 100% up each image pixel shows as a crisp
+square, which makes pixel-level touch-ups with the pencil easy. The status bar also
+shows which image pixel the pointer is over, and how big the selection is.
 
 **Show Pixel Grid** in the main menu (or `Ctrl+G`) draws a thin line between every two
 pixels from 400% zoom up; further out the lines would hide the picture. The grey lines
@@ -183,8 +192,8 @@ only on screen and never saved into the image.
 ## What Tempera remembers
 
 The window size, the tool and shape in hand, the brush and text sizes, the font, the fill
-tolerance, the airbrush density, whether the pixel grid is on, both colours with the
-ones picked lately, the JPEG quality, where the palette sits and the interface size
+tolerance, the airbrush density, whether shapes get an outline and a fill, whether the
+pixel grid is on, both colours with the ones painted with lately, the JPEG quality, where the palette sits and the interface size
 are all kept in `~/.config/tempera/settings.ini` and put back the next
 time, along with how to fit a print. The printer and paper last printed on are kept in
 `~/.config/tempera/print-settings.ini`. A **New image** can start transparent instead of white.
@@ -202,9 +211,9 @@ history.
 
 ## Moving the palette
 
-The colour palette sits in the bottom bar by default. **Palette Position** in the main
-menu moves it under the tools in the left sidebar, or to a column right of the canvas,
-which leaves more height for the image on wide screens. The choice is remembered in
+The colour palette sits in a column right of the canvas by default. **Palette
+Position** in the main menu moves it under the tools on the left, which leaves the most
+room for the image, or to a row along the bottom. The choice is remembered in
 `~/.config/tempera/settings.ini`.
 
 ## Resizing the image
@@ -217,7 +226,7 @@ canvas around it is the next section.
 ## Resizing the canvas
 
 Drag one of the three grips on the right, bottom and bottom-right edge of the image to
-resize it by hand; the dashed outline and the size readout in the bottom bar follow the
+resize it by hand; the dashed outline and the size readout in the status bar follow the
 pointer, and the change is applied when you let go. For an exact size, click that
 readout or use **Canvas Size…** (`Ctrl+E`) in the main menu. Either way the image keeps
 its top-left corner — growing the canvas adds white, shrinking it crops — and the
@@ -238,7 +247,7 @@ in Files pastes just as well as one copied as pixels.
 If the pasted image runs off the right or bottom edge — a full-screen screenshot on a
 smaller canvas usually does — the canvas grows to fit it when the paste lands, so
 nothing is cropped. The one exception is the 8192 × 8192 pixel limit: whatever would
-land past it is cut off, and a message says so. The size readout in the bottom bar counts out the size you are
+land past it is cut off, and a message says so. The size readout in the status bar counts out the size you are
 heading for while the paste is still floating, and one `Ctrl+Z` afterwards takes back
 both the pixels and the new canvas size.
 
@@ -285,17 +294,18 @@ a click outside the selection while the select tool or the lasso is in hand, dro
 
 ## Rotating and flipping
 
-The main menu turns the whole image a quarter turn either way — swapping its width and
-height — or mirrors it left to right or top to bottom. A paste or text still floating
+The row of buttons under **Crop to Selection** in the main menu turns the whole image a
+quarter turn either way — swapping its width and height — or mirrors it left to right or
+top to bottom; `Ctrl+Shift+R` turns it counterclockwise. A paste or text still floating
 is landed first and any selection is dropped; each is a single step to undo.
 
 ## Adding text
 
 Pick the text tool (`T`) and click where the text should start: a dashed box appears
 with a caret in it, and what you type is drawn straight onto the canvas in the primary
-colour — right-click instead to type in the secondary one. The sidebar slider that
-sizes the brush sizes the text instead while the text tool is selected, in points, and
-**Font…** below it picks the family and style. Both apply to the box you are typing in
+colour — right-click instead to type in the secondary one. The **Size** that sets the
+brush sets the text instead while the text tool is selected, in points, and the button
+after it, which shows the font's name, picks the family and style. Both apply to the box you are typing in
 as well as the next one, so you can resize the text you are looking at.
 
 The text stays editable until it lands. `Enter` starts a new line, the arrow keys,
@@ -317,7 +327,7 @@ gives the same pixels.
 ## Keyboard and screen readers
 
 Every tool, menu item and file action has a keyboard shortcut, and `Tab` moves through
-the sidebar, the palette and the bottom bar. The colour swatches are buttons: `Tab` to
+the tool options, the tools, the palette and the status bar. The colour swatches are buttons: `Tab` to
 one and press `Enter` or `Space` to make it the primary colour, then `X` to swap the
 primary and secondary colours around. With a pointer, right-clicking a swatch sets the
 secondary colour directly.
@@ -333,6 +343,7 @@ the tool buttons, the colour swatches, checkboxes and sliders, and the grips for
 resizing the canvas. The change applies straight away to every open window and is
 remembered. It adds to GNOME's own **Large Text** setting rather than replacing it; the
 image itself and the file dialogs, which the desktop draws, keep their usual size. When
-the window is too small for everything at a big size, the sidebar and palette scroll.
+the window is too small for everything at a big size, the tool options, the sidebar and
+the palette scroll.
 
-![Tempera at 150% interface size, with the Shapes tool selected and its nine shapes and the Fill shape option under the size slider, and a star just drawn on the canvas waiting in a dashed box with a grip on each corner and side](data/screenshots/interface-size.png)
+![Tempera at 150% interface size, with the Shapes tool selected and its nine shapes, the size and the Outline and Fill buttons in the bar above the canvas, and a star just drawn on the canvas waiting in a dashed box with a grip on each corner and side](data/screenshots/interface-size.png)
