@@ -35,6 +35,7 @@ class ShapesTool(Tool):
     """One tool for every shape; the shape in hand does the drawing."""
 
     id = "shapes"
+    sized = True
     label = _("Shapes")
     icon_name = "tempera-shapes-symbolic"
 

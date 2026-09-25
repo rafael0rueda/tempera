@@ -26,6 +26,8 @@ class ToolContext:
     select_region: Callable[[float, float, float, float], None]
     # Shift held: squares up a shape or snaps a line to a 45° angle.
     constrain: bool = False
+    # Whether a shape that can be filled also gets its outline drawn.
+    outline_shapes: bool = True
     # The eraser rubs back to transparency rather than to the secondary color.
     erase_to_transparency: bool = False
     # How far from the color under the pointer a flood fill still spreads.
@@ -92,6 +94,9 @@ class Tool:
     label = ""
     icon_name = ""
     mutates = True
+    # Whether the size in the tool options applies: a brush width, a line
+    # width, or for text the font size.
+    sized = False
     # Above 0, the canvas calls repeat() this often (in ms) while the button is
     # held, even when the pointer does not move.
     repeat_ms = 0
@@ -164,6 +169,8 @@ class Tool:
 
 class FreehandTool(Tool):
     """Draws a continuous stroke straight onto the document surface."""
+
+    sized = True
 
     antialias = True
     line_cap = cairo.LINE_CAP_ROUND
@@ -436,11 +443,18 @@ class ShapeTool(Tool):
 
 
 def paint_shape(cr: cairo.Context, ctx: ToolContext) -> None:
-    """Fill the path with the alternate color when filling is on, then stroke its outline."""
+    """Fill the path with the alternate color when filling is on, then stroke its outline.
+
+    With neither asked for, the outline is drawn anyway: a shape that leaves no
+    mark would look like the tool had stopped working.
+    """
     cr.set_line_width(ctx.size)
     cr.set_line_join(cairo.LINE_JOIN_MITER)
     if ctx.fill_shapes:
         set_source(cr, ctx.alt_color)
         cr.fill_preserve()
-    set_source(cr, ctx.color)
-    cr.stroke()
+    if ctx.outline_shapes or not ctx.fill_shapes:
+        set_source(cr, ctx.color)
+        cr.stroke()
+    else:
+        cr.new_path()

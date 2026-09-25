@@ -3,11 +3,12 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from functools import cache
 
 import cairo
-from gi.repository import Adw, Gdk, Gio, GLib, GObject, Graphene, Gtk
+from gi.repository import Adw, Gdk, Gio, GLib, GObject, Graphene, Gsk, Gtk
 
 from .clipboard import surface_from_texture
 from .color import ColorState
@@ -39,6 +40,8 @@ CHECKER_SIZE = 8
 SMOOTH_ZOOM_BELOW = 1.0
 # The resize grips, at the default interface size; they grow with it.
 HANDLE_SIZE = 10
+HANDLE_RADIUS = 3
+HANDLE_RING = 2
 HANDLE_GRAB = 12
 # Room around the image so the grips sitting on its edge are fully visible.
 HANDLE_MARGIN = 8
@@ -53,7 +56,7 @@ ZOOM_PRESETS = [0.1, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0, 8.0]
 ZOOM_SCROLL_FACTOR = 1.1
 # The canvas margin set in style.css. Zoom to Fit leaves it on both sides, plus
 # the strip the resize grips need.
-CANVAS_MARGIN = 24
+CANVAS_MARGIN = 32
 # How near, in screen pixels at the default interface size, a click must land
 # to hit a point already placed, such as a polygon's first corner.
 POINT_REACH = 6
@@ -192,6 +195,7 @@ class Canvas(Gtk.DrawingArea):
         colors.connect("changed", lambda *_args: self._restyle_shape())
         self._brush_size = 4
         self._fill_shapes = False
+        self._outline_shapes = True
         self.erase_to_transparency = False
         self.fill_tolerance = DEFAULT_TOLERANCE
         self.airbrush_density = DEFAULT_DENSITY
@@ -381,6 +385,15 @@ class Canvas(Gtk.DrawingArea):
     @fill_shapes.setter
     def fill_shapes(self, value: bool) -> None:
         self._fill_shapes = value
+        self._restyle_shape()
+
+    @property
+    def outline_shapes(self) -> bool:
+        return self._outline_shapes
+
+    @outline_shapes.setter
+    def outline_shapes(self, value: bool) -> None:
+        self._outline_shapes = value
         self._restyle_shape()
 
     def _restyle_shape(self) -> None:
@@ -1137,6 +1150,7 @@ class Canvas(Gtk.DrawingArea):
             button=button,
             size=self.brush_size,
             fill_shapes=self.fill_shapes,
+            outline_shapes=self.outline_shapes,
             erase_to_transparency=self.erase_to_transparency,
             tolerance=self.fill_tolerance,
             density=self.airbrush_density,
@@ -1406,19 +1420,6 @@ class Canvas(Gtk.DrawingArea):
         if self.pixel_grid_visible:
             self._draw_pixel_grid(cr, image_width, image_height)
 
-        # One screen pixel wide at any zoom, rather than one image pixel, which
-        # zoomed in would cover the whole first row and column.
-        outline = self.get_color()
-        cr.save()
-        cr.scale(1 / self.zoom, 1 / self.zoom)
-        cr.set_source_rgba(outline.red, outline.green, outline.blue, 0.25)
-        cr.set_line_width(1)
-        screen_width = round(image_width * self.zoom)
-        screen_height = round(image_height * self.zoom)
-        cr.rectangle(0.5, 0.5, screen_width - 1, screen_height - 1)
-        cr.stroke()
-        cr.restore()
-
         accent = self._accent()
         frame = self.active_tool.frame() if self.active_tool.adjustable else None
         if frame is not None and frame[2] >= 1 and frame[3] >= 1:
@@ -1581,15 +1582,15 @@ class Canvas(Gtk.DrawingArea):
 
     def _draw_handles(self, cr: cairo.Context, accent: Gdk.RGBA) -> None:
         size = scaled(HANDLE_SIZE)
-        half = size / 2
+        ring = scaled(HANDLE_RING)
         for hx, hy in self._handles().values():
-            cr.rectangle(hx - half, hy - half, size, size)
-            cr.set_source_rgba(accent.red, accent.green, accent.blue, 1.0)
-            cr.fill_preserve()
-            # A white keyline keeps the grip readable on top of dark artwork.
+            # A white ring keeps the grip readable on top of dark artwork.
+            _rounded_square(cr, hx, hy, size + 2 * ring, scaled(HANDLE_RADIUS) + ring)
             cr.set_source_rgb(1, 1, 1)
-            cr.set_line_width(1)
-            cr.stroke()
+            cr.fill()
+            _rounded_square(cr, hx, hy, size, scaled(HANDLE_RADIUS))
+            cr.set_source_rgba(accent.red, accent.green, accent.blue, 1.0)
+            cr.fill()
 
     @staticmethod
     def _draw_checkerboard(cr: cairo.Context) -> None:
@@ -1599,6 +1600,24 @@ class Canvas(Gtk.DrawingArea):
         cr.paint()
         cr.restore()
 
+
+
+def _rounded_square(cr: cairo.Context, x: float, y: float, size: float, radius: float) -> None:
+    """A square path centred on a point, its corners rounded."""
+    half = size / 2
+    radius = min(radius, half)
+    left, top, right, bottom = x - half, y - half, x + half, y + half
+    cr.new_sub_path()
+    cr.arc(right - radius, top + radius, radius, -math.pi / 2, 0)
+    cr.arc(right - radius, bottom - radius, radius, 0, math.pi / 2)
+    cr.arc(left + radius, bottom - radius, radius, math.pi / 2, math.pi)
+    cr.arc(left + radius, top + radius, radius, math.pi, 3 * math.pi / 2)
+    cr.close_path()
+
+
+# The image's drop shadow: (colour alpha, y offset, blur), a tight one for the
+# edge and a soft one for depth.
+IMAGE_SHADOWS = ((0.25, 1, 3), (0.18, 10, 30))
 
 
 class CanvasFrame(Gtk.Widget):
@@ -1643,3 +1662,23 @@ class CanvasFrame(Gtk.Widget):
         allocation.x, allocation.y = x, y
         allocation.width, allocation.height = child_width, child_height
         self.canvas.size_allocate(allocation, -1)
+        # The shadow is the frame's to draw, and follows the image as it moves or grows.
+        self.queue_draw()
+
+    def do_snapshot(self, snapshot: Gtk.Snapshot) -> None:
+        # Under the image only, not the room kept past it for the grips.
+        canvas = self.canvas
+        found, origin = canvas.compute_point(self, Graphene.Point().init(0, 0))
+        if found:
+            document = canvas.document
+            bounds = Graphene.Rect().init(
+                origin.x, origin.y, document.width * canvas.zoom, document.height * canvas.zoom
+            )
+            # Built in steps: what init_from_rect() returns points into the
+            # temporary struct it was called on, which is freed straight away.
+            outline = Gsk.RoundedRect()
+            outline.init_from_rect(bounds, 0)
+            for alpha, offset, blur in IMAGE_SHADOWS:
+                color = Gdk.RGBA(red=0, green=0, blue=0, alpha=alpha)
+                snapshot.append_outset_shadow(outline, color, 0, offset, 0, blur)
+        self.snapshot_child(canvas, snapshot)

@@ -47,3 +47,33 @@ def test_offset_holds_while_dragging_and_catches_up_after():
     frame.canvas._drag_origin = None
     frame.do_size_allocate(width + 800, height + 800, -1)
     assert frame.offset == (400, 400)
+
+
+def shadow_outlines(node) -> list:
+    """The outlines of every drop shadow in a render node tree."""
+    from gi.repository import Gsk
+
+    if isinstance(node, Gsk.OutsetShadowNode):
+        return [node.get_outline().bounds]
+    if isinstance(node, Gsk.ContainerNode):
+        return [bounds for index in range(node.get_n_children()) for bounds in shadow_outlines(node.get_child(index))]
+    return []
+
+
+def test_the_shadow_lies_under_the_image():
+    """It once held garbage, which could make GTK drop the canvas from the frame altogether."""
+    frame = make_frame()
+    frame.canvas.zoom = 0.5
+    frame.canvas.document.resize(400, 300)
+    width, height = canvas_size(frame)
+    frame.do_size_allocate(width + 400, height + 200, -1)
+
+    snapshot = Gtk.Snapshot()
+    frame.do_snapshot(snapshot)
+    outlines = shadow_outlines(snapshot.to_node())
+
+    assert outlines
+    x, y = frame.offset
+    for bounds in outlines:
+        assert (bounds.origin.x, bounds.origin.y) == (x, y)
+        assert (bounds.size.width, bounds.size.height) == (200, 150)

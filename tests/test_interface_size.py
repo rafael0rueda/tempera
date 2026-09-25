@@ -8,7 +8,7 @@ from gi.repository import Adw, Gio, GLib, Gtk
 
 from tempera import interface_size, recent_files, settings
 from tempera.preferences import PreferencesDialog, size_label
-from tempera.window import BOTTOM_BAR_HEIGHT, SIDEBAR_WIDTH, TemperaWindow
+from tempera.window import PALETTE_BAR_HEIGHT, SIDEBAR_WIDTH, TemperaWindow
 
 
 @pytest.fixture(autouse=True)
@@ -65,7 +65,7 @@ def test_the_default_size_leaves_the_theme_alone():
 def test_bigger_sizes_grow_icons_and_controls():
     assert "-gtk-icon-size: 32px" in interface_size.icon_stylesheet(200)
     controls = interface_size.control_stylesheet(200)
-    assert ".tempera-tool { min-width: 80px; min-height: 80px; }" in controls
+    assert ".tempera-tool { min-width: 76px; min-height: 76px; }" in controls
     assert "min-width: 44px" in controls  # palette swatches
     assert "min-width: 64px" in controls  # the current colours
     # The slider knob stays centred on its trough as it grows.
@@ -128,7 +128,7 @@ def test_tool_buttons_and_swatches_are_drawn_bigger(window):
     window._set_interface_size(200)
 
     # The sizes the stylesheet gives them at 200%.
-    assert wait_for(lambda: width(tool) >= 80)
+    assert wait_for(lambda: width(tool) >= 76)
     assert width(swatch) >= 44
     assert width(current) >= 64
 
@@ -152,7 +152,7 @@ def test_choosing_a_size_resizes_every_window_and_is_remembered(application, win
         assert settings.load_setting("interface-size") == "150"
         for each in (window, other):
             assert each._sidebar.get_size_request() == (round(SIDEBAR_WIDTH * 1.5), -1)
-            assert each._bottom_bar.get_size_request() == (-1, round(BOTTOM_BAR_HEIGHT * 1.5))
+            assert each._palette_bar.get_size_request() == (-1, round(PALETTE_BAR_HEIGHT * 1.5))
         assert dialog.get_content_width() == 960
     finally:
         other.destroy()

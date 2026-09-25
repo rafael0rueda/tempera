@@ -7,6 +7,7 @@ from .base import Tool, ToolContext
 
 class TextTool(Tool):
     id = "text"
+    sized = True
     label = _("Text")
     icon_name = "tempera-text-symbolic"
     # Typing is what changes the image, and that happens long after the click,

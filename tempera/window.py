@@ -8,7 +8,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango
 from . import APP_NAME, interface_size, printing, recovery, shortcuts
 from .canvas import PIXEL_GRID_ZOOM, Canvas, CanvasFrame
 from .clipboard import has_image, read_image, texture_from_surface
-from .color import MAX_RECENT_COLORS, ColorBar, ColorState, PaletteLayout, Swatch, describe, rgba
+from .color import MAX_RECENT_COLORS, ColorBar, ColorChip, ColorState, PaletteLayout, rgba
 from .document import DEFAULT_HEIGHT, DEFAULT_WIDTH, MAX_SIZE, Document, new_surface
 from .i18n import _
 from .file_io import (
@@ -64,26 +64,41 @@ IMAGE_ACTIONS = {
 BRUSH_SIZE_RANGE = (1, 64)
 # 0 fills only the exact colour clicked; the top end spreads across most shades.
 TOLERANCE_RANGE = (0, 128)
-# Wide enough for the palette block and the tool grid, and fixed, so that
-# switching tools never moves the canvas sideways. Given for the default
-# interface size, like the bottom bar's height.
-SIDEBAR_WIDTH = 128
-BOTTOM_BAR_HEIGHT = 60
+# Sizes of the panels and bars, given for the default interface size and
+# scaled with it. The sidebar is fixed, so switching tools never moves the
+# canvas sideways.
+SIDEBAR_WIDTH = 96
+OPTIONS_BAR_HEIGHT = 44
+STATUS_BAR_HEIGHT = 32
+PALETTE_BAR_HEIGHT = 56
+PALETTE_COLUMN_WIDTH = 72
+OPTION_SCALE_WIDTH = 120
 WHITE = (1.0, 1.0, 1.0, 1.0)
 TRANSPARENT = (0.0, 0.0, 0.0, 0.0)
 
 
-def _option_check(text: str) -> Gtk.CheckButton:
-    """A tool option whose label wraps rather than widening the sidebar."""
-    label = Gtk.Label(label=text, wrap=True, xalign=0)
-    # Two shortish lines rather than one long one, so that the widest option
-    # does not set the width of the whole sidebar.
-    label.set_max_width_chars(9)
-    label.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
-    check = Gtk.CheckButton()
-    check.set_child(label)
-    check.update_property([Gtk.AccessibleProperty.LABEL], [text])
-    return check
+def _bar_separator() -> Gtk.Separator:
+    """A short upright line between groups of options in a bar."""
+    return Gtk.Separator(
+        orientation=Gtk.Orientation.VERTICAL,
+        margin_top=12,
+        margin_bottom=12,
+        margin_start=6,
+        margin_end=6,
+    )
+
+
+def _row(*widgets: Gtk.Widget) -> Gtk.Box:
+    box = Gtk.Box(spacing=6)
+    for widget in widgets:
+        box.append(widget)
+    return box
+
+
+def _caption(text: str) -> Gtk.Label:
+    label = Gtk.Label(label=text)
+    label.add_css_class("dim-label")
+    return label
 
 
 def _whole(text: str, fallback: int, limits: tuple[int, int] | None = None) -> int:
@@ -146,18 +161,9 @@ class TemperaWindow(Adw.ApplicationWindow):
         # Where the palette can go: position -> (slot it sits in, strip to show).
         self._palette_slots: dict[str, tuple[Gtk.Box, Gtk.Widget | None]] = {}
 
-        # The sidebars and bottom bar sit in one frame with the header's colour,
-        # and the canvas is inset in it as a card, so no separator lines are
-        # needed where they meet. The bottom bar is part of the content rather
-        # than a toolbar-view bar, which would paint it a colour of its own.
-        chrome = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        chrome.add_css_class("tempera-chrome")
-        chrome.append(self._build_content())
-        chrome.append(self._build_bottom_bar())
-
         toolbars = Adw.ToolbarView()
         toolbars.add_top_bar(self._build_header())
-        toolbars.set_content(chrome)
+        toolbars.set_content(self._build_body())
         self._place_palette(load_palette_position())
 
         self.toasts.set_child(toolbars)
@@ -220,9 +226,9 @@ class TemperaWindow(Adw.ApplicationWindow):
         view_section.append(_("Zoom to Fit"), "win.zoom-fit")
         view_section.append(_("Show Pixel Grid"), "win.pixel-grid")
         palette_menu = Gio.Menu()
-        palette_menu.append(_("Bottom"), "win.palette-position::bottom")
         palette_menu.append(_("Left"), "win.palette-position::left")
         palette_menu.append(_("Right"), "win.palette-position::right")
+        palette_menu.append(_("Bottom"), "win.palette-position::bottom")
         view_section.append_submenu(_("Palette Position"), palette_menu)
         menu.append_section(None, view_section)
         file_section = Gio.Menu()
@@ -251,44 +257,276 @@ class TemperaWindow(Adw.ApplicationWindow):
         header.pack_end(self._busy_spinner)
         return header
 
-    def _build_bottom_bar(self) -> Gtk.Widget:
-        bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
-        # Held at the height the palette gives it, even when the palette is
-        # elsewhere; sync_interface_size() sets it.
-        self._bottom_bar = bar
+    def _build_body(self) -> Gtk.Widget:
+        """Under the header: the tool options, the tools, canvas and palette, then the status bar.
 
-        # Holds the palette when it sits at the bottom; empty otherwise. It
-        # scrolls sideways rather than hold the window wider than the screen
-        # at a big interface size.
-        bottom_slot = Gtk.Box()
-        bottom_scroller = Gtk.ScrolledWindow(
+        The bars are part of the content rather than toolbar-view bars, which
+        would paint them the header's colour.
+        """
+        body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        body.append(self._build_options_bar())
+        body.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
+        body.append(self._build_content())
+        body.append(self._build_palette_bar())
+        body.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
+        body.append(self._build_status_bar())
+        return body
+
+    def _build_options_bar(self) -> Gtk.Widget:
+        """The options of the tool in hand, in one row that changes with the tool."""
+        bar = Gtk.Box(spacing=6)
+        bar.add_css_class("tempera-options-bar")
+        self._options_bar = bar
+
+        self._tool_label = Gtk.Label(xalign=0, margin_end=6)
+        self._tool_label.add_css_class("heading")
+        bar.append(self._tool_label)
+
+        # Picking a shape here, or with its key, also takes up the Shapes tool.
+        self._shape_picker = Gtk.Box(valign=Gtk.Align.CENTER)
+        self._shape_picker.add_css_class("linked")
+        self._shape_picker.add_css_class("tempera-shape-picker")
+        for shape in SHAPE_CLASSES:
+            button = Gtk.ToggleButton(icon_name=shape.icon_name)
+            button.add_css_class("tempera-option-toggle")
+            self._add_shortcut_tooltip(button, shape.label, f"win.shape::{shape.id}")
+            button.set_action_name("win.shape")
+            button.set_action_target_value(GLib.Variant.new_string(shape.id))
+            self._shape_picker.append(button)
+        bar.append(self._shape_picker)
+
+        # One size for every tool that has one: a brush or line width, or with
+        # the text tool the font size. The slider and the box share one value.
+        self._size_section = Gtk.Box(spacing=6)
+        self._size_section.append(_bar_separator())
+        self._size_section.append(_caption(_("Size")))
+        self._size_adjustment = Gtk.Adjustment(
+            value=self.canvas.brush_size,
+            lower=BRUSH_SIZE_RANGE[0],
+            upper=BRUSH_SIZE_RANGE[1],
+            step_increment=1,
+            page_increment=4,
+        )
+        self._size_scale = Gtk.Scale(
+            orientation=Gtk.Orientation.HORIZONTAL,
+            adjustment=self._size_adjustment,
+            draw_value=False,
+            valign=Gtk.Align.CENTER,
+        )
+        self._size_scale.update_property([Gtk.AccessibleProperty.LABEL], [_("Size")])
+        self._size_section.append(self._size_scale)
+        # The value and its unit, in a box of their own; the slider says it
+        # to a screen reader.
+        self._size_value = Gtk.Label(valign=Gtk.Align.CENTER, accessible_role=Gtk.AccessibleRole.PRESENTATION)
+        self._size_value.add_css_class("numeric")
+        self._size_value.add_css_class("tempera-option-value")
+        self._size_section.append(self._size_value)
+        self._size_adjustment.connect("value-changed", self._on_size_changed)
+        bar.append(self._size_section)
+
+        # Each tool's own options, after the size.
+        self._tool_options = Gtk.Stack(hhomogeneous=False, vhomogeneous=False)
+        self._tool_options.add_named(Gtk.Box(), "none")
+        bar.append(self._tool_options)
+
+        # Outline and fill are separate, so a shape can be all fill. They wear
+        # the colours they draw in: the primary for the outline, the secondary
+        # for the fill.
+        self._outline_chip = ColorChip(filled=False)
+        self._outline_toggle = self._option_toggle(
+            _("Outline"), self._outline_chip, _("Draw the outline, in the primary colour")
+        )
+        self._outline_toggle.set_active(True)
+        self._outline_toggle.connect("toggled", self._on_outline_toggled)
+        self._fill_chip = ColorChip(filled=True)
+        self._fill_toggle = self._option_toggle(
+            _("Fill"), self._fill_chip, _("Fill the inside, in the secondary colour")
+        )
+        self._fill_toggle.connect("toggled", self._on_fill_toggled)
+        self._syncing_shape_options = False
+        self._add_page("shape", _row(self._outline_toggle, self._fill_toggle))
+        self.colors.connect("changed", lambda *_args: self._sync_color_chips())
+        self._sync_color_chips()
+
+        self._erase_check = Gtk.CheckButton(label=_("Erase to nothing"))
+        self._erase_check.set_tooltip_text(
+            _("Rub back to nothing instead of the secondary colour")
+        )
+        self._erase_check.connect(
+            "toggled", lambda check: setattr(self.canvas, "erase_to_transparency", check.get_active())
+        )
+        self._add_page("eraser", self._erase_check)
+
+        self._tolerance_scale, self._tolerance_value = self._option_scale(
+            TOLERANCE_RANGE, self.canvas.fill_tolerance, self._on_tolerance_changed
+        )
+        self._add_page(
+            "fill", _row(_caption(_("Tolerance")), self._tolerance_scale, self._tolerance_value)
+        )
+        self._tolerance_scale.update_property([Gtk.AccessibleProperty.LABEL], [_("Tolerance")])
+        self._show_tolerance(self.canvas.fill_tolerance)
+
+        self._density_scale, density_value = self._option_scale(
+            DENSITY_RANGE,
+            self.canvas.airbrush_density,
+            lambda scale: setattr(self.canvas, "airbrush_density", int(scale.get_value())),
+        )
+        self._density_scale.set_tooltip_text(_("How thickly the airbrush sprays"))
+        self._density_scale.update_property([Gtk.AccessibleProperty.LABEL], [_("Density")])
+        self._add_page("airbrush", _row(_caption(_("Density")), self._density_scale, density_value))
+
+        # The button names the typeface; the size is the one before it.
+        self._font_label = Gtk.Label(label=font_without_size(self.canvas.font))
+        self._font_label.set_ellipsize(Pango.EllipsizeMode.END)
+        self._font_label.set_max_width_chars(20)
+        self._font_button = Gtk.Button(
+            child=self._font_label,
+            tooltip_text=_("Typeface for the text tool"),
+            valign=Gtk.Align.CENTER,
+        )
+        self._font_button.update_property(
+            [Gtk.AccessibleProperty.DESCRIPTION], [_("Typeface for the text tool")]
+        )
+        self._font_button.connect("clicked", self._choose_font)
+        self._add_page("text", self._font_button)
+
+        self._sync_size_scale()
+
+        # Scrolls sideways rather than hold the window wider than the screen,
+        # which the shapes and a big interface size would otherwise do.
+        scroller = Gtk.ScrolledWindow(
             hscrollbar_policy=Gtk.PolicyType.AUTOMATIC,
             vscrollbar_policy=Gtk.PolicyType.NEVER,
-            propagate_natural_width=True,
             propagate_natural_height=True,
         )
-        bottom_scroller.set_child(bottom_slot)
-        bar.append(bottom_scroller)
+        scroller.set_child(bar)
+        return scroller
 
-        # Expands so the status items stay on the right wherever the palette is.
+    def _add_page(self, name: str, options: Gtk.Widget) -> None:
+        """One tool's options, set off from the size before them by a line."""
+        options.set_valign(Gtk.Align.CENTER)
+        page = Gtk.Box(spacing=6)
+        page.append(_bar_separator())
+        page.append(options)
+        self._tool_options.add_named(page, name)
+
+    @staticmethod
+    def _option_toggle(text: str, chip: Gtk.Widget, tooltip: str) -> Gtk.ToggleButton:
+        content = Gtk.Box(spacing=8)
+        content.append(chip)
+        content.append(Gtk.Label(label=text))
+        button = Gtk.ToggleButton(child=content, tooltip_text=tooltip, valign=Gtk.Align.CENTER)
+        button.add_css_class("tempera-option-toggle")
+        button.update_property([Gtk.AccessibleProperty.LABEL], [text])
+        return button
+
+    @staticmethod
+    def _option_scale(limits, value, on_changed) -> tuple[Gtk.Scale, Gtk.Label]:
+        """A slider for a tool option, with its value written beside it."""
+        scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, *limits, 1)
+        scale.set_value(value)
+        scale.set_draw_value(False)
+        scale.set_valign(Gtk.Align.CENTER)
+        shown = Gtk.Label(label=str(int(value)), xalign=1)
+        shown.add_css_class("numeric")
+        # Wide enough for the largest value, so the bar does not jiggle.
+        shown.set_width_chars(len(str(limits[1])))
+
+        def changed(scale: Gtk.Scale) -> None:
+            shown.set_label(str(int(scale.get_value())))
+            on_changed(scale)
+
+        scale.connect("value-changed", changed)
+        return scale, shown
+
+    def _build_content(self) -> Gtk.Widget:
+        content = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, vexpand=True)
+        content.append(self._build_sidebar())
+        content.append(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL))
+
+        self._canvas_area = Gtk.ScrolledWindow(hexpand=True, vexpand=True)
+        self._canvas_area.add_css_class("tempera-canvas-area")
+        self._canvas_area.set_child(CanvasFrame(self.canvas))
+        # Middle-drag to pan and pinch to zoom belong to the scrolling area.
+        self.canvas.attach_to_viewport(self._canvas_area)
+        content.append(self._canvas_area)
+
+        content.append(self._build_palette_column())
+        return content
+
+    def _build_palette_column(self) -> Gtk.Widget:
+        """A column right of the canvas for the palette, hidden while it is elsewhere.
+
+        It scrolls, like the sidebar, when the window is too short for it.
+        """
+        slot = Gtk.Box(halign=Gtk.Align.FILL)
+        slot.add_css_class("tempera-palette-column")
+        self._palette_column = slot
+        scroller = Gtk.ScrolledWindow(
+            hscrollbar_policy=Gtk.PolicyType.NEVER,
+            vscrollbar_policy=Gtk.PolicyType.AUTOMATIC,
+            propagate_natural_width=True,
+        )
+        scroller.set_child(slot)
+        strip = Gtk.Box(visible=False)
+        strip.append(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL))
+        strip.append(scroller)
+        self._palette_slots["right"] = (slot, strip)
+        return strip
+
+    def _build_palette_bar(self) -> Gtk.Widget:
+        """A row under the canvas for the palette, hidden while it is elsewhere.
+
+        It scrolls sideways rather than hold the window wider than the screen
+        at a big interface size.
+        """
+        slot = Gtk.Box()
+        slot.add_css_class("tempera-palette-bar")
+        self._palette_bar = slot
+        scroller = Gtk.ScrolledWindow(
+            hscrollbar_policy=Gtk.PolicyType.AUTOMATIC,
+            vscrollbar_policy=Gtk.PolicyType.NEVER,
+            propagate_natural_height=True,
+        )
+        scroller.set_child(slot)
+        strip = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, visible=False)
+        strip.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
+        strip.append(scroller)
+        self._palette_slots["bottom"] = (slot, strip)
+        return strip
+
+    def _build_status_bar(self) -> Gtk.Widget:
+        bar = Gtk.Box(spacing=16)
+        bar.add_css_class("tempera-status-bar")
+        self._status_bar = bar
+
+        self._cursor_label = Gtk.Label(xalign=0)
         # How big the selection is, beside the pointer position.
-        self._selection_label = Gtk.Label()
-        self._selection_label.add_css_class("numeric")
-        self._selection_label.add_css_class("dim-label")
-        bar.append(self._selection_label)
+        self._selection_label = Gtk.Label(xalign=0, hexpand=True)
+        for label in (self._cursor_label, self._selection_label):
+            label.add_css_class("numeric")
+            label.add_css_class("dim-label")
+            bar.append(label)
 
-        self._cursor_label = Gtk.Label(hexpand=True, xalign=1)
-        self._cursor_label.add_css_class("numeric")
-        self._cursor_label.add_css_class("dim-label")
-        bar.append(self._cursor_label)
+        # The size is also the header's subtitle, which renders too small to
+        # read at larger interface font sizes; here it also opens Canvas Size.
+        self._canvas_size_label = Gtk.Label()
+        self._canvas_size_label.add_css_class("numeric")
+        self._canvas_size_label.add_css_class("dim-label")
+        button = Gtk.Button(child=self._canvas_size_label, valign=Gtk.Align.CENTER)
+        self._add_shortcut_tooltip(button, "Canvas size", "win.resize")
+        button.add_css_class("flat")
+        button.add_css_class("tempera-status-button")
+        button.set_action_name("win.resize")
+        bar.append(button)
 
+        zoom = Gtk.Box(spacing=2, valign=Gtk.Align.CENTER)
         self._zoom_label = Gtk.Label()
         self._zoom_label.add_css_class("numeric")
-        zoom_button = Gtk.Button()
+        # Wide enough for "800%", so the buttons either side stay put.
+        self._zoom_label.set_width_chars(5)
+        zoom_button = Gtk.Button(child=self._zoom_label)
         self._add_shortcut_tooltip(zoom_button, "Reset zoom", "win.zoom-reset")
-        zoom_button.set_child(self._zoom_label)
-        zoom_button.add_css_class("flat")
-        zoom_button.set_valign(Gtk.Align.CENTER)
         zoom_button.set_action_name("win.zoom-reset")
         # Scrolling over the zoom level steps through the zoom presets. Discrete,
         # so a touchpad swipe moves one level at a time rather than racing.
@@ -298,199 +536,50 @@ class TemperaWindow(Adw.ApplicationWindow):
         )
         zoom_scroll.connect("scroll", self._on_zoom_label_scroll)
         zoom_button.add_controller(zoom_scroll)
-        bar.append(zoom_button)
+        for widget, icon, text, action in (
+            (Gtk.Button(), "tempera-zoom-out-symbolic", "Zoom out", "win.zoom-out"),
+            (zoom_button, None, None, None),
+            (Gtk.Button(), "tempera-zoom-in-symbolic", "Zoom in", "win.zoom-in"),
+        ):
+            if icon is not None:
+                widget.set_icon_name(icon)
+                self._add_shortcut_tooltip(widget, text, action)
+                widget.set_action_name(action)
+            widget.add_css_class("flat")
+            widget.add_css_class("tempera-status-button")
+            zoom.append(widget)
+        bar.append(zoom)
         self._on_zoom_changed(self.canvas, self.canvas.zoom)
-
-        # The canvas size lives here rather than in the header subtitle, which
-        # renders too small to read at larger interface font sizes.
-        self._canvas_size_label = Gtk.Label()
-        self._canvas_size_label.add_css_class("numeric")
-        button = Gtk.Button()
-        self._add_shortcut_tooltip(button, "Canvas size", "win.resize")
-        button.set_child(self._canvas_size_label)
-        button.add_css_class("flat")
-        button.set_valign(Gtk.Align.CENTER)
-        button.set_margin_end(12)
-        button.set_action_name("win.resize")
-        bar.append(button)
-
-        self._palette_slots["bottom"] = (bottom_slot, None)
         return bar
-
-    def _build_content(self) -> Gtk.Widget:
-        content = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
-        content.append(self._build_sidebar())
-
-        self._canvas_card = Gtk.ScrolledWindow(hexpand=True, vexpand=True)
-        self._canvas_card.add_css_class("tempera-canvas-area")
-        self._canvas_card.set_child(CanvasFrame(self.canvas))
-        # Middle-drag to pan and pinch to zoom belong to the scrolling area.
-        self.canvas.attach_to_viewport(self._canvas_card)
-        content.append(self._canvas_card)
-
-        right_slot, right_strip = self._build_palette_strip()
-        content.append(right_strip)
-        self._palette_slots["right"] = (right_slot, right_strip)
-        return content
-
-    def _build_palette_strip(self) -> tuple[Gtk.Box, Gtk.Widget]:
-        """A column right of the canvas for the palette, hidden while it is elsewhere.
-
-        Returns the slot the palette goes in and the strip to show. The strip
-        scrolls, like the sidebar, when the window is too short for it.
-        """
-        slot = Gtk.Box()
-        slot.add_css_class("tempera-sidebar")
-        strip = Gtk.ScrolledWindow(
-            hscrollbar_policy=Gtk.PolicyType.NEVER,
-            vscrollbar_policy=Gtk.PolicyType.AUTOMATIC,
-            propagate_natural_width=True,
-            visible=False,
-        )
-        strip.set_child(slot)
-        return slot, strip
 
     def _build_sidebar(self) -> Gtk.Widget:
         sidebar = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         sidebar.add_css_class("tempera-sidebar")
         self._sidebar = sidebar
 
-        tools = Gtk.Grid(row_spacing=6, column_spacing=6, halign=Gtk.Align.CENTER)
+        tools = Gtk.Grid(row_spacing=4, column_spacing=4, halign=Gtk.Align.CENTER)
         for index, tool in enumerate(TOOL_CLASSES):
             button = Gtk.ToggleButton(icon_name=tool.icon_name)
             self._add_shortcut_tooltip(button, tool.label, f"win.tool::{tool.id}")
+            button.add_css_class("flat")
             button.add_css_class("tempera-tool")
             button.set_action_name("win.tool")
             button.set_action_target_value(GLib.Variant.new_string(tool.id))
             tools.attach(button, index % 2, index // 2, 1, 1)
         sidebar.append(tools)
 
-        sidebar.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
-
-        self._size_label = Gtk.Label(xalign=0)
-        self._size_label.add_css_class("caption")
-        self._size_label.set_ellipsize(Pango.EllipsizeMode.END)
-        sidebar.append(self._size_label)
-
-        self._size_scale = Gtk.Scale.new_with_range(
-            Gtk.Orientation.HORIZONTAL, *BRUSH_SIZE_RANGE, 1
-        )
-        self._size_scale.set_value(self.canvas.brush_size)
-        self._size_scale.set_draw_value(False)
-        self._size_scale.connect("value-changed", self._on_size_changed)
-        sidebar.append(self._size_scale)
-        self._sync_size_scale()
-
-        # Each tool's own options. They live in a stack so that the sidebar is
-        # as wide as the widest of them whichever tool is in hand, rather than
-        # growing and shrinking as tools are picked.
-        self._tool_options = Gtk.Stack(hhomogeneous=True, vhomogeneous=False)
-        self._tool_options.add_named(Gtk.Box(), "none")
-        sidebar.append(self._tool_options)
-
-        shape_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        shape_grid = Gtk.Grid(row_spacing=2, column_spacing=2, halign=Gtk.Align.CENTER)
-        for index, shape in enumerate(SHAPE_CLASSES):
-            button = Gtk.ToggleButton(icon_name=shape.icon_name)
-            button.add_css_class("flat")
-            self._add_shortcut_tooltip(button, shape.label, f"win.shape::{shape.id}")
-            button.set_action_name("win.shape")
-            button.set_action_target_value(GLib.Variant.new_string(shape.id))
-            shape_grid.attach(button, index % 3, index // 3, 1, 1)
-        shape_box.append(shape_grid)
-        # The fill is the secondary colour, shown beside the option: white,
-        # the colour it starts as, would otherwise look like no fill at all.
-        fill_row = Gtk.Box(spacing=6)
-        # The check expands to push the swatch to the end; saying outright that
-        # the row does not stops that spreading up and widening the sidebar.
-        fill_row.set_hexpand(False)
-        self._fill_check = _option_check(_("Fill shape"))
-        self._fill_check.set_hexpand(True)
-        self._fill_check.connect("toggled", self._on_fill_toggled)
-        fill_row.append(self._fill_check)
-        self._fill_swatch = Swatch(self.colors.secondary)
-        self._fill_swatch.set_valign(Gtk.Align.CENTER)
-        self._fill_swatch.connect("picked", lambda *_args: self._color_bar.choose(primary=False))
-        fill_row.append(self._fill_swatch)
-        shape_box.append(fill_row)
-        self.colors.connect("changed", lambda *_args: self._sync_fill_swatch())
-        self._sync_fill_swatch()
-        self._tool_options.add_named(shape_box, "shape")
-
-        self._erase_check = _option_check(_("Erase to nothing"))
-        self._erase_check.set_tooltip_text(
-            _("Rub back to nothing instead of the secondary colour")
-        )
-        self._erase_check.connect(
-            "toggled", lambda check: setattr(self.canvas, "erase_to_transparency", check.get_active())
-        )
-        self._tool_options.add_named(self._erase_check, "eraser")
-
-        tolerance_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        self._tolerance_label = Gtk.Label(xalign=0)
-        self._tolerance_label.add_css_class("caption")
-        tolerance_box.append(self._tolerance_label)
-        self._tolerance_scale = Gtk.Scale.new_with_range(
-            Gtk.Orientation.HORIZONTAL, *TOLERANCE_RANGE, 1
-        )
-        self._tolerance_scale.set_value(self.canvas.fill_tolerance)
-        # The number rides on the slider, so the caption above stays short and
-        # the sidebar stays narrow.
-        self._tolerance_scale.set_draw_value(True)
-        self._tolerance_scale.connect("value-changed", self._on_tolerance_changed)
-        tolerance_box.append(self._tolerance_scale)
-        self._tool_options.add_named(tolerance_box, "fill")
-        self._show_tolerance(self.canvas.fill_tolerance)
-
-        density_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        density_label = Gtk.Label(label=_("Density"), xalign=0)
-        density_label.add_css_class("caption")
-        density_box.append(density_label)
-        self._density_scale = Gtk.Scale.new_with_range(
-            Gtk.Orientation.HORIZONTAL, *DENSITY_RANGE, 1
-        )
-        self._density_scale.set_value(self.canvas.airbrush_density)
-        self._density_scale.set_draw_value(True)
-        self._density_scale.set_tooltip_text(_("How thickly the airbrush sprays"))
-        self._density_scale.update_property([Gtk.AccessibleProperty.LABEL], [_("Density")])
-        self._density_scale.connect(
-            "value-changed",
-            lambda scale: setattr(self.canvas, "airbrush_density", int(scale.get_value())),
-        )
-        density_box.append(self._density_scale)
-        self._tool_options.add_named(density_box, "airbrush")
-
-        # A caption of our own rather than a GtkFontDialogButton, whose label
-        # grows the sidebar to fit whatever font name it is showing. It leaves
-        # the size out, because that is what the slider above is for.
-        font_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        self._font_label = Gtk.Label(label=font_without_size(self.canvas.font), xalign=0)
-        self._font_label.add_css_class("caption")
-        self._font_label.set_ellipsize(Pango.EllipsizeMode.END)
-        font_box.append(self._font_label)
-
-        self._font_button = Gtk.Button(
-            label=_("Font…"), tooltip_text=_("Typeface for the text tool")
-        )
-        self._font_button.update_property(
-            [Gtk.AccessibleProperty.DESCRIPTION], [_("Typeface for the text tool")]
-        )
-        self._font_button.connect("clicked", self._choose_font)
-        font_box.append(self._font_button)
-        self._tool_options.add_named(font_box, "text")
-
-        # The palette's place when it is on the left: under the tool options.
+        # The palette's place when it is on the left: under the tools.
         left_section = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12, visible=False)
-        left_section.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
+        left_section.append(
+            Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL, margin_start=8, margin_end=8)
+        )
         left_slot = Gtk.Box(halign=Gtk.Align.CENTER)
         left_section.append(left_slot)
         sidebar.append(left_section)
         self._palette_slots["left"] = (left_slot, left_section)
 
         # Scrolls rather than squeezing when the window is too short for it all,
-        # which the palette makes likelier. Its width does not follow the
-        # content: a long option label would otherwise widen the whole sidebar
-        # whenever that tool was picked.
+        # which the palette makes likelier.
         scrolled = Gtk.ScrolledWindow(
             hscrollbar_policy=Gtk.PolicyType.NEVER,
             vscrollbar_policy=Gtk.PolicyType.AUTOMATIC,
@@ -630,9 +719,8 @@ class TemperaWindow(Adw.ApplicationWindow):
         parent = self._color_bar.get_parent()
         if parent is not None:
             parent.remove(self._color_bar)
-        for name, (slot, strip) in self._palette_slots.items():
-            if strip is not None:
-                strip.set_visible(name == position)
+        for name, (_slot, strip) in self._palette_slots.items():
+            strip.set_visible(name == position)
         slot, _strip = self._palette_slots[position]
         slot.append(self._color_bar)
         self._color_bar.set_layout(
@@ -642,11 +730,6 @@ class TemperaWindow(Adw.ApplicationWindow):
                 "right": PaletteLayout.NARROW,
             }[position]
         )
-        # The strip's padding already spaces the card from the right edge.
-        if position == "right":
-            self._canvas_card.add_css_class("tempera-palette-beside")
-        else:
-            self._canvas_card.remove_css_class("tempera-palette-beside")
         self._palette_position = position
 
     def _set_interface_size(self, size: int) -> None:
@@ -659,18 +742,24 @@ class TemperaWindow(Adw.ApplicationWindow):
 
     def sync_interface_size(self) -> None:
         """Size what is set in code rather than by the stylesheets."""
-        self._sidebar.set_size_request(interface_size.scaled(SIDEBAR_WIDTH), -1)
-        self._bottom_bar.set_size_request(-1, interface_size.scaled(BOTTOM_BAR_HEIGHT))
+        scaled = interface_size.scaled
+        self._sidebar.set_size_request(scaled(SIDEBAR_WIDTH), -1)
+        self._palette_column.set_size_request(scaled(PALETTE_COLUMN_WIDTH), -1)
+        self._options_bar.set_size_request(-1, scaled(OPTIONS_BAR_HEIGHT))
+        self._palette_bar.set_size_request(-1, scaled(PALETTE_BAR_HEIGHT))
+        self._status_bar.set_size_request(-1, scaled(STATUS_BAR_HEIGHT))
+        for scale in (self._size_scale, self._tolerance_scale, self._density_scale):
+            scale.set_size_request(scaled(OPTION_SCALE_WIDTH), -1)
         self.canvas.sync_interface_size()
 
     def _step_size(self, step: int) -> None:
         """[ and ]: a bigger or smaller brush, or bigger or smaller text."""
-        self._size_scale.set_value(self._size_scale.get_value() + step)
+        self._size_adjustment.set_value(self._size_adjustment.get_value() + step)
 
-    def _on_size_changed(self, scale: Gtk.Scale) -> None:
+    def _on_size_changed(self, adjustment: Gtk.Adjustment) -> None:
         if self._syncing_size:
             return
-        size = int(scale.get_value())
+        size = int(adjustment.get_value())
         if self.canvas.supports_font:
             self.canvas.set_font(with_font_size(self.canvas.font, size))
         else:
@@ -684,31 +773,50 @@ class TemperaWindow(Adw.ApplicationWindow):
         # Moving the range moves the value with it, which would write the brush
         # size into the font and back again.
         self._syncing_size = True
-        self._size_scale.set_range(*(FONT_SIZE_RANGE if text else BRUSH_SIZE_RANGE))
-        self._size_scale.set_value(size)
+        low, high = FONT_SIZE_RANGE if text else BRUSH_SIZE_RANGE
+        self._size_adjustment.configure(size, low, high, 1, 4, 0)
         self._syncing_size = False
         self._show_size(size)
 
     def _show_size(self, size: int) -> None:
         unit = _("pt") if self.canvas.supports_font else _("px")
-        self._size_label.set_label(_("Size: {size} {unit}").format(size=size, unit=unit))
+        self._size_value.set_label(_("{size} {unit}").format(size=size, unit=unit))
 
-    def _sync_fill_swatch(self) -> None:
-        color = self.colors.secondary
-        self._fill_swatch.color = color
-        self._fill_swatch.set_label_text(
-            _("Fill colour, the secondary colour: {color}").format(color=describe(color))
-        )
+    def _sync_color_chips(self) -> None:
+        self._outline_chip.color = self.colors.primary
+        self._fill_chip.color = self.colors.secondary
 
-    def _on_fill_toggled(self, check: Gtk.CheckButton) -> None:
-        self.canvas.fill_shapes = check.get_active()
+    def _sync_shape_options(self) -> None:
+        """Show what the shape in hand will draw: a line is all outline, whatever is set."""
+        canvas = self.canvas
+        fillable = canvas.shapes.fillable
+        self._syncing_shape_options = True
+        self._outline_toggle.set_active(canvas.outline_shapes or not fillable)
+        self._fill_toggle.set_active(canvas.fill_shapes and fillable)
+        self._outline_toggle.set_sensitive(fillable)
+        self._fill_toggle.set_sensitive(fillable)
+        self._syncing_shape_options = False
+
+    def _on_outline_toggled(self, button: Gtk.ToggleButton) -> None:
+        if self._syncing_shape_options:
+            return
+        self.canvas.outline_shapes = button.get_active()
+        # A shape needs one or the other to show at all.
+        if not button.get_active() and not self.canvas.fill_shapes:
+            self._fill_toggle.set_active(True)
+
+    def _on_fill_toggled(self, button: Gtk.ToggleButton) -> None:
+        if self._syncing_shape_options:
+            return
+        self.canvas.fill_shapes = button.get_active()
+        if not button.get_active() and not self.canvas.outline_shapes:
+            self._outline_toggle.set_active(True)
 
     def _on_tolerance_changed(self, scale: Gtk.Scale) -> None:
         self.canvas.fill_tolerance = int(scale.get_value())
         self._show_tolerance(self.canvas.fill_tolerance)
 
     def _show_tolerance(self, tolerance: int) -> None:
-        self._tolerance_label.set_label(_("Tolerance"))
         self._tolerance_scale.set_tooltip_text(
             _("How far a fill spreads into colours near the one you clicked: {value}").format(
                 value=tolerance
@@ -718,12 +826,13 @@ class TemperaWindow(Adw.ApplicationWindow):
     def _sync_tool_options(self) -> None:
         """Show the options belonging to the tool in hand, and none of the others."""
         canvas = self.canvas
+        self._tool_label.set_label(canvas.active_tool.label)
+        self._shape_picker.set_visible(canvas.supports_fill)
+        self._size_section.set_visible(canvas.active_tool.sized)
         page = "none"
         if canvas.supports_fill:
             page = "shape"
-            # A line, arrow or curve has no inside to fill.
-            self._fill_check.set_sensitive(canvas.shapes.fillable)
-            self._fill_swatch.set_sensitive(canvas.shapes.fillable)
+            self._sync_shape_options()
         elif canvas.supports_erase_mode:
             page = "eraser"
         elif canvas.supports_tolerance:
@@ -831,8 +940,7 @@ class TemperaWindow(Adw.ApplicationWindow):
         self._title.set_title(f"{document.title}{marker}")
         # While a paste or a text box floats this counts out the size a commit
         # would leave.
-        width, height = self.canvas.pending_size
-        self._canvas_size_label.set_label(_("{width} × {height} px").format(width=width, height=height))
+        self._show_canvas_size(*self.canvas.pending_size)
         # Undo also takes back what has not been stamped down yet.
         self.lookup_action("undo").set_enabled(
             document.can_undo or self.canvas.has_floating or self.canvas.shape_in_progress
@@ -864,6 +972,10 @@ class TemperaWindow(Adw.ApplicationWindow):
 
     def _on_resize_preview(self, canvas, width: int, height: int) -> None:
         """Count out the pending size while a resize grip is being dragged."""
+        self._show_canvas_size(width, height)
+
+    def _show_canvas_size(self, width: int, height: int) -> None:
+        self._title.set_subtitle(_("{width} × {height}").format(width=width, height=height))
         self._canvas_size_label.set_label(_("{width} × {height} px").format(width=width, height=height))
 
     def _on_zoom_label_scroll(self, controller, dx: float, dy: float) -> bool:
@@ -877,7 +989,7 @@ class TemperaWindow(Adw.ApplicationWindow):
         self._zoom_label.set_label(f"{round(zoom * 100)}%")
 
     def _on_pointer_moved(self, canvas, x: float, y: float) -> None:
-        self._cursor_label.set_label(_("{x}, {y} px").format(x=round(x), y=round(y)))
+        self._cursor_label.set_label(_("{x}, {y}").format(x=round(x), y=round(y)))
         self._cursor_label.update_property(
             [Gtk.AccessibleProperty.LABEL],
             [_("Pointer at {x}, {y} pixels").format(x=round(x), y=round(y))],
@@ -1367,6 +1479,8 @@ class TemperaWindow(Adw.ApplicationWindow):
             load_setting("fill-tolerance"), self.canvas.fill_tolerance, TOLERANCE_RANGE
         )
         self._tolerance_scale.set_value(self.canvas.fill_tolerance)
+        self.canvas.fill_shapes = load_setting("shape-fill") == "1"
+        self.canvas.outline_shapes = load_setting("shape-outline") != "0" or not self.canvas.fill_shapes
         self._density_scale.set_value(
             _whole(load_setting("airbrush-density"), self.canvas.airbrush_density, DENSITY_RANGE)
         )
@@ -1382,6 +1496,7 @@ class TemperaWindow(Adw.ApplicationWindow):
         self.colors.recent = [color for color in recent if color is not None][:MAX_RECENT_COLORS]
         self._color_bar.refresh()
         self._sync_size_scale()
+        self._sync_tool_options()
 
     def _save_preferences(self) -> None:
         width, height = self.get_default_size()
@@ -1393,6 +1508,8 @@ class TemperaWindow(Adw.ApplicationWindow):
                 "tool": self.canvas.active_tool.id,
                 "shape": self.canvas.shapes.shape.id,
                 "brush-size": self.canvas.brush_size,
+                "shape-fill": "1" if self.canvas.fill_shapes else "0",
+                "shape-outline": "1" if self.canvas.outline_shapes else "0",
                 "font": self.canvas.font,
                 "fill-tolerance": self.canvas.fill_tolerance,
                 "airbrush-density": self.canvas.airbrush_density,

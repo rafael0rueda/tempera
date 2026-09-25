@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import math
+
 from gi.repository import Gdk, GObject, Gtk
 from .i18n import _
 
@@ -139,6 +141,56 @@ class Swatch(Gtk.Button):
         cr.stroke()
 
 
+def _rounded_rect(cr, x: float, y: float, width: float, height: float, radius: float) -> None:
+    cr.new_sub_path()
+    cr.arc(x + width - radius, y + radius, radius, -math.pi / 2, 0)
+    cr.arc(x + width - radius, y + height - radius, radius, 0, math.pi / 2)
+    cr.arc(x + radius, y + height - radius, radius, math.pi / 2, math.pi)
+    cr.arc(x + radius, y + radius, radius, math.pi, 3 * math.pi / 2)
+    cr.close_path()
+
+
+class ColorChip(Gtk.DrawingArea):
+    """A small square in a colour, outlined or filled, on a button that draws in it."""
+
+    def __init__(self, filled: bool, size: int = 14):
+        super().__init__(content_width=size, content_height=size, valign=Gtk.Align.CENTER)
+        self.add_css_class("tempera-color-chip")
+        self._filled = filled
+        self._color = rgba("#000000")
+        self.set_draw_func(self._draw)
+
+    @property
+    def color(self) -> Gdk.RGBA:
+        return self._color
+
+    @color.setter
+    def color(self, value: Gdk.RGBA) -> None:
+        self._color = value
+        self.queue_draw()
+
+    def _draw(self, area, cr, width, height, *_args):
+        side = min(width, height)
+        line = max(1.0, side / 7)
+        x, y = (width - side) / 2, (height - side) / 2
+        color = self._color
+        if self._filled:
+            _rounded_rect(cr, x, y, side, side, side / 3.5)
+            cr.set_source_rgba(color.red, color.green, color.blue, color.alpha)
+            cr.fill_preserve()
+            # A faint edge, so black on a dark bar or white on a light one still shows.
+            edge = area.get_color()
+            cr.set_source_rgba(edge.red, edge.green, edge.blue, 0.2)
+            cr.set_line_width(1)
+            cr.stroke()
+        else:
+            inset = line / 2
+            _rounded_rect(cr, x + inset, y + inset, side - line, side - line, side / 3.5 - inset)
+            cr.set_source_rgba(color.red, color.green, color.blue, color.alpha)
+            cr.set_line_width(line)
+            cr.stroke()
+
+
 class PaletteLayout:
     WIDE = "wide"  # a row along the bottom bar
     NARROW = "narrow"  # a column beside the canvas
@@ -199,12 +251,8 @@ class ColorBar(Gtk.Box):
         """Lay out for the bottom bar, a narrow strip beside the canvas, or the tool sidebar."""
         wide = layout == PaletteLayout.WIDE
         self.set_orientation(Gtk.Orientation.HORIZONTAL if wide else Gtk.Orientation.VERTICAL)
-        # A strip or the sidebar brings its own padding, so only the bottom bar needs margins.
-        margin_x, margin_y = (12, 6) if wide else (0, 0)
-        self.set_margin_start(margin_x)
-        self.set_margin_end(margin_x)
-        self.set_margin_top(margin_y)
-        self.set_margin_bottom(margin_y)
+        # Wherever it sits, the panel brings its own padding.
+        self.set_valign(Gtk.Align.CENTER if wide else Gtk.Align.START)
 
         stacked = layout == PaletteLayout.NARROW
         self._current_row.set_orientation(
@@ -217,7 +265,7 @@ class ColorBar(Gtk.Box):
         self._recent_grid.set_valign(self._grid.get_valign())
 
         self._columns = {
-            PaletteLayout.WIDE: 10, PaletteLayout.NARROW: 2, PaletteLayout.BLOCK: 5
+            PaletteLayout.WIDE: 10, PaletteLayout.NARROW: 2, PaletteLayout.BLOCK: 4
         }[layout]
         for swatch in self._palette_swatches:
             if swatch.get_parent() is not None:

@@ -13,8 +13,8 @@ from pathlib import Path
 
 from gi.repository import GLib
 
-PALETTE_POSITIONS = ("bottom", "left", "right")
-DEFAULT_PALETTE_POSITION = "bottom"
+PALETTE_POSITIONS = ("left", "right", "bottom")
+DEFAULT_PALETTE_POSITION = "right"
 
 CONFIG_NAME = "tempera"
 # Tempera was called Hue before, and kept its settings under that name.

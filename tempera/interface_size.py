@@ -73,7 +73,10 @@ def control_stylesheet(size: int) -> str:
     slider_margin = f"-{(slider - 4) // 2}px"
     return "\n".join(
         [
-            f".tempera-tool {{ min-width: {px(40)}; min-height: {px(40)}; }}",
+            f".tempera-tool {{ min-width: {px(38)}; min-height: {px(38)}; }}",
+            f".tempera-shape-picker > button {{ min-width: {px(30)}; min-height: {px(28)}; }}",
+            f".tempera-status-button {{ min-width: {px(24)}; min-height: {px(24)}; }}",
+            f".tempera-color-chip {{ min-width: {px(14)}; min-height: {px(14)}; }}",
             f".tempera-swatch > * {{ min-width: {px(22)}; min-height: {px(22)}; }}",
             ".tempera-swatch.tempera-swatch-current > *"
             f" {{ min-width: {px(32)}; min-height: {px(32)}; }}",

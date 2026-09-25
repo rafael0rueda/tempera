@@ -72,53 +72,56 @@ def palette_position(window):
     return window.lookup_action("palette-position").get_state().get_string()
 
 
-def test_palette_starts_at_the_bottom(window):
-    assert palette_position(window) == "bottom"
-    slot, _strip = window._palette_slots["bottom"]
-    assert window._color_bar.get_parent() is slot
-    assert window._color_bar.get_orientation() == Gtk.Orientation.HORIZONTAL
-
-
-@pytest.mark.parametrize("position", ["left", "right"])
-def test_palette_moves_to_a_side_strip(window, position):
-    window.activate_action("win.palette-position", GLib.Variant.new_string(position))
-
-    slot, strip = window._palette_slots[position]
+def test_palette_starts_on_the_right(window):
+    assert palette_position(window) == "right"
+    slot, _strip = window._palette_slots["right"]
     assert window._color_bar.get_parent() is slot
     assert window._color_bar.get_orientation() == Gtk.Orientation.VERTICAL
-    visible = {name for name, (_slot, s) in window._palette_slots.items() if s and s.get_visible()}
+
+
+@pytest.mark.parametrize(
+    "position, orientation",
+    [("left", Gtk.Orientation.VERTICAL), ("bottom", Gtk.Orientation.HORIZONTAL)],
+)
+def test_palette_moves(window, position, orientation):
+    window.activate_action("win.palette-position", GLib.Variant.new_string(position))
+
+    slot, _strip = window._palette_slots[position]
+    assert window._color_bar.get_parent() is slot
+    assert window._color_bar.get_orientation() == orientation
+    visible = {name for name, (_slot, s) in window._palette_slots.items() if s.get_visible()}
     assert visible == {position}
 
 
-@pytest.mark.parametrize("position, columns", [("bottom", 10), ("left", 5), ("right", 2)])
+@pytest.mark.parametrize("position, columns", [("bottom", 10), ("left", 4), ("right", 2)])
 def test_palette_grid_fits_where_it_is(window, position, columns):
     window.activate_action("win.palette-position", GLib.Variant.new_string(position))
     grid = window._color_bar._grid
     assert max(grid.query_child(child)[0] for child in window._color_bar._palette_swatches) == columns - 1
 
 
-def test_palette_returns_to_the_bottom(window):
+def test_palette_returns_to_the_right(window):
     window.activate_action("win.palette-position", GLib.Variant.new_string("left"))
-    window.activate_action("win.palette-position", GLib.Variant.new_string("bottom"))
+    window.activate_action("win.palette-position", GLib.Variant.new_string("right"))
 
-    slot, _strip = window._palette_slots["bottom"]
+    slot, _strip = window._palette_slots["right"]
     assert window._color_bar.get_parent() is slot
-    assert window._color_bar.get_orientation() == Gtk.Orientation.HORIZONTAL
-    assert not any(s.get_visible() for _slot, s in window._palette_slots.values() if s)
+    visible = {name for name, (_slot, s) in window._palette_slots.items() if s.get_visible()}
+    assert visible == {"right"}
 
 
 def test_unknown_palette_position_is_ignored(window):
     window.activate_action("win.palette-position", GLib.Variant.new_string("top"))
-    assert palette_position(window) == "bottom"
+    assert palette_position(window) == "right"
 
 
 def test_palette_position_is_remembered(application, window):
-    window.activate_action("win.palette-position", GLib.Variant.new_string("right"))
+    window.activate_action("win.palette-position", GLib.Variant.new_string("bottom"))
 
     reopened = TemperaWindow(application)
     try:
-        assert palette_position(reopened) == "right"
-        slot, _strip = reopened._palette_slots["right"]
+        assert palette_position(reopened) == "bottom"
+        slot, _strip = reopened._palette_slots["bottom"]
         assert reopened._color_bar.get_parent() is slot
     finally:
         reopened.destroy()
@@ -409,8 +412,8 @@ def test_zoom_to_fit_shows_the_whole_image(window):
 
     zoom = window.canvas.zoom
     assert zoom < 1.0
-    assert 4000 * zoom <= window._canvas_card.get_width()
-    assert 3000 * zoom <= window._canvas_card.get_height()
+    assert 4000 * zoom <= window._canvas_area.get_width()
+    assert 3000 * zoom <= window._canvas_area.get_height()
 
 
 def test_an_image_larger_than_the_window_opens_zoomed_out(application, window, tmp_path):
@@ -567,12 +570,32 @@ def test_a_damaged_preference_falls_back_to_the_default(application, window, tmp
 
 
 def test_the_sidebar_keeps_its_width_whichever_tool_is_in_hand(window):
-    """A long option label used to widen the sidebar and shove the canvas sideways."""
+    """Switching tools must never shove the canvas sideways."""
     widths = set()
-    for tool in ("pencil", "shapes", "fill", "eraser", "text"):
+    for tool in ("pencil", "shapes", "fill", "eraser", "text", "lasso"):
         window.lookup_action("tool").change_state(GLib.Variant.new_string(tool))
-        widths.add(window._tool_options.measure(Gtk.Orientation.HORIZONTAL, -1)[1])
+        widths.add(window._sidebar.measure(Gtk.Orientation.HORIZONTAL, -1)[1])
     assert len(widths) == 1
+
+
+def test_the_options_bar_names_the_tool_and_shows_a_size_only_where_one_applies(window):
+    def use(tool):
+        window.lookup_action("tool").change_state(GLib.Variant.new_string(tool))
+
+    use("brush")
+    assert window._tool_label.get_label() == "Brush"
+    assert window._size_section.get_visible()
+    assert window._size_value.get_label() == f"{window.canvas.brush_size} px"
+    assert not window._shape_picker.get_visible()
+
+    use("text")
+    assert window._size_value.get_label().endswith(" pt")
+
+    use("fill")
+    assert not window._size_section.get_visible()
+
+    use("shapes")
+    assert window._shape_picker.get_visible()
 
 
 def test_picking_a_shape_takes_up_the_shapes_tool(window):
@@ -582,22 +605,68 @@ def test_picking_a_shape_takes_up_the_shapes_tool(window):
     assert window._tool_options.get_visible_child_name() == "shape"
 
 
-def test_fill_is_offered_only_for_shapes_with_an_inside(window):
-    window.activate_action("win.shape", GLib.Variant.new_string("line"))
-    assert not window._fill_check.get_sensitive()
-    assert not window._fill_swatch.get_sensitive()
+def test_outline_and_fill_reach_the_canvas(window):
     window.activate_action("win.shape", GLib.Variant.new_string("ellipse"))
-    assert window._fill_check.get_sensitive()
-    assert window._fill_swatch.get_sensitive()
+    window._fill_toggle.set_active(True)
+    window._outline_toggle.set_active(False)
+    assert window.canvas.fill_shapes
+    assert not window.canvas.outline_shapes
 
 
-def test_the_fill_swatch_shows_the_secondary_colour(window):
-    assert window._fill_swatch.color.equal(window.colors.secondary)
+def test_outline_and_fill_are_never_both_off(window):
+    window.activate_action("win.shape", GLib.Variant.new_string("ellipse"))
+    assert window._outline_toggle.get_active() and not window._fill_toggle.get_active()
+
+    window._outline_toggle.set_active(False)
+    assert window._fill_toggle.get_active()
+    assert window.canvas.fill_shapes
+
+    window._fill_toggle.set_active(False)
+    assert window._outline_toggle.get_active()
+    assert window.canvas.outline_shapes
+
+
+def test_a_line_shows_as_all_outline_without_losing_the_choice(window):
+    window.activate_action("win.shape", GLib.Variant.new_string("ellipse"))
+    window._fill_toggle.set_active(True)
+    window._outline_toggle.set_active(False)
+
+    window.activate_action("win.shape", GLib.Variant.new_string("line"))
+    assert window._outline_toggle.get_active() and not window._fill_toggle.get_active()
+    assert not window._outline_toggle.get_sensitive()
+    assert not window._fill_toggle.get_sensitive()
+
+    window.activate_action("win.shape", GLib.Variant.new_string("star"))
+    assert window._fill_toggle.get_active() and not window._outline_toggle.get_active()
+
+
+def test_the_outline_and_fill_buttons_show_their_colours(window):
+    window.colors.primary = rgba("#c01c28")
     window.colors.secondary = rgba("#3584e4")
-    assert window._fill_swatch.color.equal(rgba("#3584e4"))
-    assert "Blue" in window._fill_swatch.get_tooltip_text()
+    assert window._outline_chip.color.equal(rgba("#c01c28"))
+    assert window._fill_chip.color.equal(rgba("#3584e4"))
     window.colors.swap()
-    assert window._fill_swatch.color.equal(window.colors.secondary)
+    assert window._outline_chip.color.equal(rgba("#3584e4"))
+
+
+def test_outline_and_fill_are_remembered(application, window):
+    window.activate_action("win.shape", GLib.Variant.new_string("rectangle"))
+    window._fill_toggle.set_active(True)
+    window._outline_toggle.set_active(False)
+    window._save_preferences()
+
+    reopened = TemperaWindow(application)
+    try:
+        assert reopened.canvas.fill_shapes
+        assert not reopened.canvas.outline_shapes
+    finally:
+        reopened.destroy()
+
+
+def test_the_header_shows_the_image_size(window):
+    window.canvas.document.resize(640, 480)
+    assert window._title.get_subtitle() == "640 × 480"
+    assert window._canvas_size_label.get_label() == "640 × 480 px"
 
 
 def test_an_unknown_shape_is_ignored(window):

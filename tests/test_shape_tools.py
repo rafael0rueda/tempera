@@ -35,7 +35,9 @@ def rgba(spec: str) -> Gdk.RGBA:
     return color
 
 
-def context(surface, size: int = 1, fill: bool = False, constrain: bool = False) -> ToolContext:
+def context(
+    surface, size: int = 1, fill: bool = False, constrain: bool = False, outline: bool = True
+) -> ToolContext:
     return ToolContext(
         surface=surface,
         primary=rgba("#000000"),
@@ -43,6 +45,7 @@ def context(surface, size: int = 1, fill: bool = False, constrain: bool = False)
         button=Gdk.BUTTON_PRIMARY,
         size=size,
         fill_shapes=fill,
+        outline_shapes=outline,
         pick_color=lambda color, btn: None,
         begin_text=lambda x, y, color: None,
         select_region=lambda x, y, width, height: None,
@@ -99,6 +102,20 @@ def test_a_filled_triangle_stands_on_its_base():
     draw(TriangleTool(), context(surface, fill=True), (0, 0), (40, 40))
     assert pixel_at(surface, 20, 35) == RED_PIXEL  # inside, near the base
     assert pixel_at(surface, 3, 5) == WHITE_PIXEL  # beside the apex
+
+
+def test_a_shape_can_be_all_fill():
+    surface = new_surface(40, 40, WHITE)
+    draw(RectangleTool(), context(surface, size=4, fill=True, outline=False), (4, 4), (36, 36))
+    assert pixel_at(surface, 20, 4) == RED_PIXEL  # the edge is the fill, not an outline
+    assert pixel_at(surface, 20, 20) == RED_PIXEL
+    assert pixel_at(surface, 2, 2) == WHITE_PIXEL
+
+
+def test_a_shape_with_neither_outline_nor_fill_still_gets_its_outline():
+    surface = new_surface(40, 40, WHITE)
+    draw(RectangleTool(), context(surface, size=2, fill=False, outline=False), (4, 4), (36, 36))
+    assert pixel_at(surface, 20, 4) == BLACK_PIXEL
 
 
 def test_a_rounded_rectangle_leaves_its_corners_empty():

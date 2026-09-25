@@ -5,51 +5,70 @@
    comes from libadwaita's palette, so the app follows the system light/dark
    preference and accent colour automatically. Re-theming means editing this file. */
 
-/* The frame around the canvas: sidebars, palette strip and bottom bar share the
-   header's colour so the chrome reads as one surface. */
-.tempera-chrome {
-  background-color: @headerbar_bg_color;
-}
-
-.tempera-chrome:backdrop {
-  background-color: @headerbar_backdrop_color;
+/* The panels around the canvas: the tools, and the palette wherever it sits.
+   Separators, not borders, divide them from the rest, so their lines follow
+   the theme too. */
+.tempera-sidebar,
+.tempera-palette-column,
+.tempera-palette-bar {
+  background-color: @secondary_sidebar_bg_color;
 }
 
 .tempera-sidebar {
-  padding: 12px;
+  padding: 10px 0;
 }
 
+.tempera-palette-column {
+  padding: 12px 0;
+}
+
+.tempera-palette-bar {
+  padding: 0 14px;
+}
+
+.tempera-options-bar {
+  padding: 0 12px;
+}
+
+.tempera-status-bar {
+  padding: 0 10px 0 14px;
+  font-size: 0.9em;
+}
+
+/* Flat, and picked out by a tint of the accent rather than filled with it, so
+   the tool in hand stands out without shouting. */
 .tempera-tool {
-  min-width: 40px;
-  min-height: 40px;
+  min-width: 38px;
+  min-height: 38px;
+  padding: 0;
+  border-radius: 8px;
 }
 
-.tempera-tool:checked {
-  background-color: alpha(@accent_bg_color, 0.85);
-  color: @accent_fg_color;
+.tempera-tool:checked,
+.tempera-option-toggle:checked {
+  background-color: alpha(@accent_bg_color, 0.25);
 }
 
-/* The canvas area is a card inset in the frame. The sidebar's padding spaces
-   it on the left; its own margin does the right edge unless the palette strip
-   is there. */
+.tempera-tool:checked:hover,
+.tempera-option-toggle:checked:hover {
+  background-color: alpha(@accent_bg_color, 0.32);
+}
+
+/* The shapes sit in one tray; the picked one is tinted like a tool. */
+.tempera-shape-picker > button {
+  min-width: 30px;
+  min-height: 28px;
+  padding: 0;
+}
+
+/* Darker than the panels, so the image is what the eye lands on. */
 .tempera-canvas-area {
-  /* Shaded so the card stands apart from the frame in light mode too, where
-     the header and view colours are both near white. */
-  background-color: @view_bg_color;
-  background-image: linear-gradient(@shade_color, @shade_color);
-  border: 1px solid alpha(@view_fg_color, 0.08);
-  border-radius: 12px;
-  margin: 12px 12px 0 0;
-}
-
-.tempera-canvas-area.tempera-palette-beside {
-  margin-right: 0;
+  background-color: shade(@view_bg_color, 0.87);
 }
 
 .tempera-canvas {
-  /* The widget reserves a few pixels past the image for the resize grips, so
-     the image itself draws its own outline instead of using a box-shadow. */
-  margin: 24px;
+  /* Room for the image's shadow, which the frame draws, and the resize grips. */
+  margin: 32px;
 }
 
 /* A button so it can be tabbed to and read out, but drawn as a bare square:
@@ -66,4 +85,26 @@
 
 .tempera-swatch:hover {
   background: alpha(currentColor, 0.1);
+}
+
+/* Small enough for the 32 px status bar. */
+.tempera-status-button {
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0 4px;
+}
+
+/* Options and status read as settings, not as calls to action, so their
+   buttons keep the normal weight rather than libadwaita's bold. */
+.tempera-options-bar button label,
+.tempera-status-bar button label {
+  font-weight: normal;
+}
+
+/* A value shown in a box of its own, like the mock's "13 px". */
+.tempera-option-value {
+  min-width: 56px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background-color: alpha(currentColor, 0.1);
 }
