@@ -20,7 +20,7 @@ class ArrowTool(LineTool):
 
     id = "arrow"
     label = _("Arrow")
-    icon_name = "tempera-arrow-symbolic"
+    icon_name = "tempera-shape-arrow-symbolic"
 
     def render(self, cr, ctx, start, end):
         length = math.hypot(end[0] - start[0], end[1] - start[1])

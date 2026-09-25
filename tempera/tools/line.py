@@ -10,7 +10,7 @@ from .base import ShapeTool, set_source, snap_45
 class LineTool(ShapeTool):
     id = "line"
     label = _("Line")
-    icon_name = "tempera-line-symbolic"
+    icon_name = "tempera-shape-line-symbolic"
     fillable = False
     # No box to stretch: a line is adjusted by the grips on its two ends.
     box_handles = False

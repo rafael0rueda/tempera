@@ -27,7 +27,7 @@ def star_points(x: float, y: float, width: float, height: float) -> list[tuple[f
 class StarTool(ShapeTool):
     id = "star"
     label = _("Star")
-    icon_name = "tempera-star-symbolic"
+    icon_name = "tempera-shape-star-symbolic"
 
     def render(self, cr, ctx, start, end):
         x, y, width, height = self.rect(start, end)

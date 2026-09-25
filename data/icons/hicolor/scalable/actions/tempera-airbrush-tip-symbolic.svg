@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <g fill="#222222">
+    <circle class="foreground-fill" cx="11" cy="5" r="0.75"/>
+    <circle class="foreground-fill" cx="13.2" cy="3.6" r="0.75"/>
+    <circle class="foreground-fill" cx="12.6" cy="6.6" r="0.75"/>
+    <circle class="foreground-fill" cx="14.4" cy="5.8" r="0.75"/>
+    <circle class="foreground-fill" cx="11.6" cy="2.2" r="0.75"/>
+  </g>
+</svg>

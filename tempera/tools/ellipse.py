@@ -10,7 +10,7 @@ from .base import ShapeTool
 class EllipseTool(ShapeTool):
     id = "ellipse"
     label = _("Ellipse")
-    icon_name = "tempera-ellipse-symbolic"
+    icon_name = "tempera-shape-ellipse-symbolic"
 
     def render(self, cr, ctx, start, end):
         x, y, width, height = self.rect(start, end)

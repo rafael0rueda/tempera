@@ -12,7 +12,7 @@ class SelectTool(Tool):
 
     id = "select"
     label = _("Select")
-    icon_name = "tempera-select-symbolic"
+    icon_name = "tempera-select-rectangle-symbolic"
     # Picking a region changes nothing in the image; moving or deleting it later does.
     mutates = False
 

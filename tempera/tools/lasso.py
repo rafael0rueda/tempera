@@ -18,7 +18,7 @@ class LassoTool(Tool):
 
     id = "lasso"
     label = _("Lasso Select")
-    icon_name = "tempera-lasso-symbolic"
+    icon_name = "tempera-select-free-symbolic"
     # Picking a region changes nothing in the image; moving or deleting it later does.
     mutates = False
 

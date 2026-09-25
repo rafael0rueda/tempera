@@ -10,7 +10,7 @@ class TriangleTool(ShapeTool):
 
     id = "triangle"
     label = _("Triangle")
-    icon_name = "tempera-triangle-symbolic"
+    icon_name = "tempera-shape-triangle-symbolic"
 
     def render(self, cr, ctx, start, end):
         x, y, width, height = self.rect(start, end)

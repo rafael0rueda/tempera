@@ -166,7 +166,7 @@ class ColorBar(Gtk.Box):
         current.append(self._secondary_swatch)
 
         # The window gives it a tooltip naming the current shortcut.
-        self.swap_button = Gtk.Button(icon_name="tempera-swap-symbolic")
+        self.swap_button = Gtk.Button(icon_name="tempera-swap-colors-symbolic")
         self.swap_button.add_css_class("flat")
         self.swap_button.set_halign(Gtk.Align.CENTER)
         self.swap_button.set_valign(Gtk.Align.CENTER)

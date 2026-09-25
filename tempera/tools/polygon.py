@@ -22,7 +22,7 @@ class PolygonTool(Tool):
 
     id = "polygon"
     label = _("Polygon")
-    icon_name = "tempera-polygon-symbolic"
+    icon_name = "tempera-shape-polygon-symbolic"
     fillable = True
 
     def __init__(self):

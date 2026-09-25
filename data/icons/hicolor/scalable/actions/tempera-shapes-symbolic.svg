@@ -1,7 +1,3 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
-  <path d="M4.57 3.18 0.32 12.18 1.68 12.82 5.93 3.82zM1 13.25 6 13.25 6 11.75 1 11.75zM4.59 3.85 6.96 8.35 8.29 7.65 5.91 3.15z"/>
-  <circle cx="5.25" cy="3.5" r="0.75"/>
-  <circle cx="1" cy="12.5" r="0.75"/>
-  <path fill-rule="evenodd" d="M11.75 0.5a3.5 3.5 0 1 1 0 7a3.5 3.5 0 1 1 0-7zm0 1.5a2 2 0 1 0 0 4a2 2 0 1 0 0-4z"/>
-  <path fill-rule="evenodd" d="M7 8h6a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-6a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1zm0.5 1.5v4h5v-4z"/>
+  <path class="foreground-stroke transparent-fill" d="M5 2.5l3.5 6h-7z M8.5 9.5h5v5h-5z" fill="none" stroke="#222222" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

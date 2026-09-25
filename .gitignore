@@ -11,3 +11,7 @@ _build/
 repo/
 po/*.pot
 po/*.mo
+
+# The design handoff the layout was built from; not part of the app
+design_handoff_tempera_redesign/
+Tempera paint application design.zip

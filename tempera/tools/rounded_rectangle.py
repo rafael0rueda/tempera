@@ -10,7 +10,7 @@ from .base import ShapeTool
 class RoundedRectangleTool(ShapeTool):
     id = "rounded-rectangle"
     label = _("Rounded Rectangle")
-    icon_name = "tempera-rounded-rectangle-symbolic"
+    icon_name = "tempera-shape-rounded-rectangle-symbolic"
 
     def render(self, cr, ctx, start, end):
         x, y, width, height = self.rect(start, end)

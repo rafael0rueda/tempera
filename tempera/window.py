@@ -179,7 +179,7 @@ class TemperaWindow(Adw.ApplicationWindow):
 
         for icon, action, tooltip in (
             ("tempera-new-symbolic", "win.new", "New image"),
-            ("document-open-symbolic", "win.open", "Open image"),
+            ("tempera-open-symbolic", "win.open", "Open image"),
             ("tempera-save-symbolic", "win.save", "Save"),
         ):
             button = Gtk.Button(icon_name=icon)

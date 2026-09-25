@@ -24,7 +24,7 @@ class CurveTool(Tool):
 
     id = "curve"
     label = _("Curve")
-    icon_name = "tempera-curve-symbolic"
+    icon_name = "tempera-shape-curve-symbolic"
     fillable = False
 
     def __init__(self):

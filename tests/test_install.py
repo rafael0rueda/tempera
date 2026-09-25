@@ -9,6 +9,8 @@ import re
 import subprocess
 from pathlib import Path
 
+import gi
+
 ROOT = Path(__file__).resolve().parent.parent
 PACKAGE = ROOT / "tempera"
 
@@ -43,6 +45,67 @@ def test_every_icon_is_shipped_or_built_into_gtk():
 
     assert used, "the icon names were not found at all"
     assert used - shipped - built_in == set()
+
+
+
+def test_every_shipped_icon_draws_something():
+    """GTK skips what it cannot render, such as a dot drawn as a zero-length stroke,
+    and would show an empty button rather than complain."""
+    gi.require_version("Gsk", "4.0")
+    from gi.repository import Gdk, Gio, Gsk, Graphene, Gtk
+
+    Gtk.init()
+    display = Gdk.Display.get_default()
+    renderer = Gsk.CairoRenderer()
+    renderer.realize_for_display(display)
+    empty = []
+    try:
+        for path in sorted((PACKAGE.parent / "data" / "icons").rglob("*-symbolic.svg")):
+            icon = Gtk.IconPaintable.new_for_file(Gio.File.new_for_path(str(path)), 32, 1)
+            snapshot = Gtk.Snapshot()
+            color = Gdk.RGBA()
+            color.parse("red")
+            icon.snapshot_symbolic(snapshot, 32, 32, [color])
+            node = snapshot.to_node()
+            if node is None:
+                empty.append(path.name)
+                continue
+            texture = renderer.render_texture(node, Graphene.Rect().init(0, 0, 32, 32))
+            downloader = Gdk.TextureDownloader.new(texture)
+            downloader.set_format(Gdk.MemoryFormat.R8G8B8A8)
+            pixels, _stride = downloader.download_bytes()
+            if not any(pixels.get_data()[3::4]):
+                empty.append(path.name)
+    finally:
+        renderer.unrealize()
+    assert empty == []
+
+
+def test_icon_strokes_are_marked_for_gtk():
+    """GTK recolours a symbolic icon by class, not by its fill and stroke attributes.
+
+    Unmarked, a stroke is dropped and a path meant to be left open is filled in,
+    so an outlined square draws as a solid one.
+    """
+    unmarked = []
+    for path in sorted((PACKAGE.parent / "data" / "icons").rglob("*-symbolic.svg")):
+        for element in re.findall(r"<(?:path|circle|rect|ellipse|line|polyline|polygon)\b[^>]*>", path.read_text()):
+            classes = set(re.search(r'class="([^"]*)"', element).group(1).split()) if "class=" in element else set()
+            if "stroke=" in element and "foreground-stroke" not in classes:
+                unmarked.append(f"{path.name}: stroke without foreground-stroke")
+            if 'fill="none"' in element and "transparent-fill" not in classes:
+                unmarked.append(f"{path.name}: fill=none without transparent-fill")
+    assert unmarked == []
+
+
+def test_icons_carry_no_embedded_metadata():
+    """Design tools embed provenance blocks many times the size of the drawing."""
+    heavy = [
+        path.name
+        for path in (PACKAGE.parent / "data" / "icons").rglob("*-symbolic.svg")
+        if "<metadata" in path.read_text()
+    ]
+    assert heavy == []
 
 
 def test_nothing_is_still_called_hue():
