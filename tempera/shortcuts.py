@@ -85,7 +85,7 @@ SHORTCUT_GROUPS: list[tuple[str, list[Shortcut]]] = [
             Shortcut("win.scale", _("Resize Image"), ("<Control>r",)),
             Shortcut("win.crop", _("Crop to Selection"), ()),
             Shortcut("win.rotate-cw", _("Rotate Clockwise"), ()),
-            Shortcut("win.rotate-ccw", _("Rotate Counterclockwise"), ()),
+            Shortcut("win.rotate-ccw", _("Rotate Counterclockwise"), ("<Control><Shift>r",)),
             Shortcut("win.flip-horizontal", _("Flip Horizontal"), ()),
             Shortcut("win.flip-vertical", _("Flip Vertical"), ()),
         ],

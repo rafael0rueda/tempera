@@ -733,3 +733,23 @@ def test_the_paint_tools_wear_the_primary_colour(window):
 
     window.colors.primary = rgba("#2ec27e")
     assert icons["brush"].tip_color.equal(rgba("#2ec27e"))
+
+
+def test_the_menu_zoom_row_follows_the_zoom(window):
+    window.canvas.set_zoom(2.0)
+    assert window._menu_zoom_label.get_label() == "200%"
+    assert window._zoom_label.get_label() == "200%"
+
+
+def test_rotating_from_the_menu_row_closes_the_menu(window, monkeypatch):
+    closed = []
+    monkeypatch.setattr(window._main_menu, "popdown", lambda: closed.append(True))
+    row = window._build_transform_row()
+    row.get_first_child().emit("clicked")
+    assert closed == [True]
+
+
+def test_rotate_counterclockwise_has_a_key():
+    from tempera import shortcuts
+
+    assert shortcuts.keys_for("win.rotate-ccw") == ["<Control><Shift>r"]
