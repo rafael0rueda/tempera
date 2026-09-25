@@ -113,6 +113,7 @@ class FillTool(Tool):
     id = "fill"
     label = _("Fill")
     icon_name = "tempera-fill-symbolic"
+    tip_icon_name = "tempera-fill-tip-symbolic"
 
     def press(self, ctx: ToolContext, x, y):
         flood_fill(ctx.surface, int(x), int(y), ctx.color, ctx.tolerance)

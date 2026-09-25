@@ -29,6 +29,7 @@ class AirbrushTool(FreehandTool):
     id = "airbrush"
     label = _("Airbrush")
     icon_name = "tempera-airbrush-symbolic"
+    tip_icon_name = "tempera-airbrush-tip-symbolic"
     repeat_ms = SPRAY_INTERVAL_MS
 
     def __init__(self, seed: int | None = None):

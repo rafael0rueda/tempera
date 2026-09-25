@@ -32,9 +32,9 @@ installing and building it, see the [README](README.md).
 | Shapes        |     | Nine shapes in one tool; see below                                   |
 | Text          | `T` | Type onto the canvas in any installed font                           |
 | Fill          | `F` | Flood fill, with a tolerance slider for how far it spreads           |
-| Colour picker | `K` | Picks the colour under the cursor                                    |
-| Select        | `S` | Rectangle to move, copy or cut                                       |
-| Lasso select  | `Shift+S` | Any shape drawn by hand, to move, copy or cut                  |
+| Color Picker  | `K` | Picks the colour under the cursor                                    |
+| Rectangle Select | `S` | Rectangle to move, copy or cut                                    |
+| Free Select   | `Shift+S` | Any shape drawn by hand, to move, copy or cut                  |
 
 The **Shapes** tool's options hold a grid of shapes, and each shape has its own key,
 which also picks up the tool.

@@ -11,7 +11,7 @@ class SelectTool(Tool):
     """Rubber-bands a rectangle and hands it to the canvas as the selection."""
 
     id = "select"
-    label = _("Select")
+    label = _("Rectangle Select")
     icon_name = "tempera-select-rectangle-symbolic"
     # Picking a region changes nothing in the image; moving or deleting it later does.
     mutates = False

@@ -38,6 +38,7 @@ class ShapesTool(Tool):
     sized = True
     label = _("Shapes")
     icon_name = "tempera-shapes-symbolic"
+    tip_icon_name = "tempera-shapes-tip-symbolic"
 
     def __init__(self):
         self.shapes: dict[str, Tool] = {cls.id: cls() for cls in SHAPE_CLASSES}

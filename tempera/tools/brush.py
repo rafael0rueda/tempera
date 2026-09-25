@@ -9,3 +9,4 @@ class BrushTool(FreehandTool):
     id = "brush"
     label = _("Brush")
     icon_name = "tempera-brush-symbolic"
+    tip_icon_name = "tempera-brush-tip-symbolic"

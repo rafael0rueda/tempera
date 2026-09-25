@@ -11,5 +11,6 @@ class PencilTool(FreehandTool):
     id = "pencil"
     label = _("Pencil")
     icon_name = "tempera-pencil-symbolic"
+    tip_icon_name = "tempera-pencil-tip-symbolic"
     antialias = False
     line_cap = cairo.LINE_CAP_SQUARE

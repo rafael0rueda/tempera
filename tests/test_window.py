@@ -713,3 +713,22 @@ def test_picking_a_color_keeps_it_rather_than_turning_black(window):
     picked = window.colors.primary
     assert [round(channel, 2) for channel in
             (picked.red, picked.green, picked.blue, picked.alpha)] == list(blue)
+
+
+def test_the_paint_tools_wear_the_primary_colour(window):
+    from tempera.tool_icon import ToolIcon
+
+    grid = window._sidebar.get_first_child()
+    icons = {}
+    child = grid.get_first_child()
+    while child is not None:
+        icon = child.get_child()
+        assert isinstance(icon, ToolIcon)
+        icons[child.get_action_target_value().get_string()] = icon
+        child = child.get_next_sibling()
+
+    tipped = {tool for tool, icon in icons.items() if icon.tip_icon_name}
+    assert tipped == {"pencil", "brush", "airbrush", "shapes", "fill", "picker"}
+
+    window.colors.primary = rgba("#2ec27e")
+    assert icons["brush"].tip_color.equal(rgba("#2ec27e"))

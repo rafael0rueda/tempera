@@ -29,6 +29,7 @@ from .settings import (
 )
 from .preferences import PreferencesDialog
 from .shortcuts_dialog import ShortcutsDialog
+from .tool_icon import ToolIcon
 from .text import FONT_SIZE_RANGE, font_size, font_without_size, with_font_size
 from .tools import (
     DEFAULT_SHAPE,
@@ -559,7 +560,7 @@ class TemperaWindow(Adw.ApplicationWindow):
 
         tools = Gtk.Grid(row_spacing=4, column_spacing=4, halign=Gtk.Align.CENTER)
         for index, tool in enumerate(TOOL_CLASSES):
-            button = Gtk.ToggleButton(icon_name=tool.icon_name)
+            button = Gtk.ToggleButton(child=ToolIcon(tool.icon_name, tool.tip_icon_name, self.colors))
             self._add_shortcut_tooltip(button, tool.label, f"win.tool::{tool.id}")
             button.add_css_class("flat")
             button.add_css_class("tempera-tool")

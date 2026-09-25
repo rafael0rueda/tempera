@@ -17,7 +17,7 @@ class LassoTool(Tool):
     """Draws a selection by hand; letting go closes the outline back to where it began."""
 
     id = "lasso"
-    label = _("Lasso Select")
+    label = _("Free Select")
     icon_name = "tempera-select-free-symbolic"
     # Picking a region changes nothing in the image; moving or deleting it later does.
     mutates = False

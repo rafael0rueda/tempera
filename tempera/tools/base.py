@@ -93,6 +93,8 @@ class Tool:
     id = ""
     label = ""
     icon_name = ""
+    # The part of the icon that paints, drawn over it in the primary colour.
+    tip_icon_name = ""
     mutates = True
     # Whether the size in the tool options applies: a brush width, a line
     # width, or for text the font size.

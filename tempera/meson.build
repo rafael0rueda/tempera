@@ -22,6 +22,7 @@ python.install_sources(
     'shortcuts.py',
     'shortcuts_dialog.py',
     'text.py',
+    'tool_icon.py',
     'window.py',
   ),
   subdir: 'tempera',
