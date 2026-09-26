@@ -1,7 +1,8 @@
 # SPDX-FileCopyrightText: 2026 Rafael Rueda
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-from tempera.canvas import Canvas, Selection
+from tempera.canvas import Canvas
+from tempera.selection import Selection
 from tempera.color import ColorState
 from tempera.document import Document, new_surface
 

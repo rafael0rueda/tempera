@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Rafael Rueda
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-from tempera.canvas import Selection
+from tempera.selection import Selection
 
 
 def test_from_rect_clips_to_the_image_bounds():

@@ -5,7 +5,6 @@ python.install_sources(
   files(
     '__init__.py',
     '__main__.py',
-    'canvas.py',
     'clipboard.py',
     'color.py',
     'document.py',
@@ -26,6 +25,20 @@ python.install_sources(
     'window.py',
   ),
   subdir: 'tempera',
+)
+
+python.install_sources(
+  files(
+    'canvas/__init__.py',
+    'canvas/floating.py',
+    'canvas/frame.py',
+    'canvas/pointer.py',
+    'canvas/render.py',
+    'canvas/selecting.py',
+    'canvas/view.py',
+    'canvas/widget.py',
+  ),
+  subdir: 'tempera/canvas',
 )
 
 python.install_sources(

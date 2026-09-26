@@ -2,7 +2,8 @@
 # tests/test_install.py fails when a file with a _() call is missing here.
 data/io.github.rafael0rueda.Tempera.desktop.in
 data/io.github.rafael0rueda.Tempera.metainfo.xml.in
-tempera/canvas.py
+tempera/canvas/floating.py
+tempera/canvas/widget.py
 tempera/clipboard.py
 tempera/color.py
 tempera/file_io.py

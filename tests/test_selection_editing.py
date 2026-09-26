@@ -3,7 +3,8 @@
 
 from gi.repository import Gdk
 
-from tempera.canvas import CUT_OFF_MESSAGE, Canvas, FloatingPaste, Selection
+from tempera.canvas import CUT_OFF_MESSAGE, Canvas, FloatingPaste
+from tempera.selection import Selection
 from tempera.color import ColorState
 from tempera.document import MAX_SIZE, Document, new_surface
 
