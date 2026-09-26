@@ -17,7 +17,7 @@ from ..file_io import load_surface_async
 from ..i18n import _
 from ..interface_size import scaled
 from ..regions import without_color
-from ..text import TextBox
+from ..text import TextBox, TextStyle
 from ..tools.base import rect_handles
 
 # Breathing room between the typed text and its dashed outline.
@@ -430,6 +430,21 @@ class FloatingMixin:
         self.queue_draw()
         self.emit("floating-changed")
 
+    # How text looks
+
+    @property
+    def text_style(self) -> TextStyle:
+        return self._text_style
+
+    @text_style.setter
+    def text_style(self, value: TextStyle) -> None:
+        self._text_style = value
+        if self._text is not None:
+            self._text.style = value
+            # The button that changed it took the focus on its way here.
+            self.grab_focus()
+            self._refresh_text()
+
     # Transparent selection
 
     @property
@@ -478,10 +493,15 @@ class FloatingMixin:
         self.emit("floating-changed")
         return True
 
-    def begin_text(self, x: float, y: float, color: Gdk.RGBA) -> None:
-        """Start a text box at a point on the canvas and take keyboard input."""
+    def begin_text(
+        self, x: float, y: float, color: Gdk.RGBA, background: Gdk.RGBA | None = None
+    ) -> None:
+        """Start a text box at a point on the canvas and take keyboard input.
+
+        `background` fills the box behind the text, when the style asks for one.
+        """
         self.commit_floating()
-        self._text = TextBox(x, y, color, self.font)
+        self._text = TextBox(x, y, color, self.font, self.text_style, background)
         self.grab_focus()
         self._keys.set_im_context(self._im)
         self._im.focus_in()
@@ -497,9 +517,9 @@ class FloatingMixin:
         text, self._text = self._text, None
         # Only what the input method has committed lands; a half-composed
         # word does not.
-        surface = text.render_surface()
-        if surface is not None:
-            if self._document.paste(surface, round(text.x), round(text.y)):
+        landing = text.landing()
+        if landing is not None:
+            if self._document.paste(*landing):
                 self.emit("message", CUT_OFF_MESSAGE)
             self.colors.remember(text.color)
         self._end_typing()

@@ -26,7 +26,7 @@ class ToolContext:
     size: int
     fill_shapes: bool
     pick_color: Callable[[Gdk.RGBA, int], None]
-    begin_text: Callable[[float, float, Gdk.RGBA], None]
+    begin_text: Callable[..., None]
     select_region: Callable[[float, float, float, float], None]
     # Shift held: squares up a shape or snaps a line to a 45° angle.
     constrain: bool = False

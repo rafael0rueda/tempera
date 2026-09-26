@@ -15,4 +15,6 @@ class TextTool(Tool):
     mutates = False
 
     def press(self, ctx: ToolContext, x, y):
-        ctx.begin_text(x, y, ctx.color)
+        # A box behind the text, if asked for, takes the other colour, as the
+        # inside of a filled shape does.
+        ctx.begin_text(x, y, ctx.color, ctx.alt_color)

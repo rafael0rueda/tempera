@@ -103,6 +103,19 @@ SHORTCUT_GROUPS: list[tuple[str, list[Shortcut]]] = [
         ],
     ),
     (
+        _("Text"),
+        [
+            Shortcut("win.text-bold", _("Bold"), ("<Control>b",)),
+            Shortcut("win.text-italic", _("Italic"), ("<Control>i",)),
+            Shortcut("win.text-underline", _("Underline"), ("<Control>u",)),
+            Shortcut("win.text-strikethrough", _("Strikethrough"), ()),
+            Shortcut("win.text-align::left", _("Align Left"), ()),
+            Shortcut("win.text-align::center", _("Center"), ()),
+            Shortcut("win.text-align::right", _("Align Right"), ()),
+            Shortcut("win.text-background", _("Text Background"), ()),
+        ],
+    ),
+    (
         _("Layers"),
         [
             Shortcut("win.add-layer", _("New Layer"), ("<Control><Shift>n",)),

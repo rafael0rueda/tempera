@@ -10,7 +10,7 @@ from gi.repository import Gdk, GLib
 from ..color import MAX_RECENT_COLORS, rgba
 from ..document import Document
 from ..settings import load_setting, save_settings
-from ..text import font_without_size
+from ..text import ALIGNMENTS, TEXT_SWITCHES, font_without_size
 from ..tools import DENSITY_RANGE, SHAPE_IDS, SHAPES_TOOL_ID, TOOL_CLASSES
 from .options_bar import BRUSH_SIZE_RANGE, TOLERANCE_RANGE
 
@@ -114,6 +114,13 @@ class SessionMixin:
         )
         if load_setting("pixel-grid") == "1":
             self.lookup_action("pixel-grid").change_state(GLib.Variant.new_boolean(True))
+        for name in TEXT_SWITCHES:
+            if load_setting(f"text-{name}") == "1":
+                self.lookup_action(f"text-{name}").change_state(GLib.Variant.new_boolean(True))
+        if load_setting("text-align") in ALIGNMENTS:
+            self.lookup_action("text-align").change_state(
+                GLib.Variant.new_string(load_setting("text-align"))
+            )
         if load_setting("transparent-selection") == "1":
             self.lookup_action("transparent-selection").change_state(GLib.Variant.new_boolean(True))
         if load_setting("layers-panel") == "1":
@@ -149,6 +156,11 @@ class SessionMixin:
                 "pixel-grid": "1" if self.canvas.show_pixel_grid else "0",
                 "layers-panel": "1" if self._layers_strip.get_visible() else "0",
                 "transparent-selection": "1" if self.canvas.transparent_selection else "0",
+                "text-align": self.canvas.text_style.align,
+                **{
+                    f"text-{name}": "1" if getattr(self.canvas.text_style, name) else "0"
+                    for name in TEXT_SWITCHES
+                },
                 "jpeg-quality": self._last_jpeg_quality,
                 "primary-color": self.colors.primary.to_string(),
                 "secondary-color": self.colors.secondary.to_string(),

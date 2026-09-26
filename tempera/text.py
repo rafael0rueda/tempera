@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import cairo
 from gi.repository import Gdk, Pango, PangoCairo
 
@@ -36,17 +38,60 @@ def font_without_size(font: str) -> str:
     return description.to_string()
 
 
-def create_layout(text: str, font: str, underline: tuple[int, int] | None = None) -> Pango.Layout:
-    """A layout of the text; `underline` is a (start, end) byte range to underline."""
+ALIGNMENTS = {
+    "left": Pango.Alignment.LEFT,
+    "center": Pango.Alignment.CENTER,
+    "right": Pango.Alignment.RIGHT,
+}
+
+
+@dataclass(frozen=True)
+class TextStyle:
+    """How the text of a box looks, all of it alike, as in Paint."""
+
+    bold: bool = False
+    italic: bool = False
+    underline: bool = False
+    strikethrough: bool = False
+    # How the lines of several sit against one another: "left", "center" or "right".
+    align: str = "left"
+    # A box behind the text, filled in the colour opposite the text's.
+    background: bool = False
+
+
+PLAIN = TextStyle()
+# The parts of a style that are on or off.
+TEXT_SWITCHES = ("bold", "italic", "underline", "strikethrough", "background")
+
+
+def create_layout(
+    text: str, font: str, style: TextStyle = PLAIN, preedit: tuple[int, int] | None = None
+) -> Pango.Layout:
+    """A layout of the text in a style; `preedit` is a (start, end) byte range an input
+    method is still composing, shown underlined."""
     layout = Pango.Layout.new(_FONT_MAP.create_context())
-    layout.set_font_description(Pango.FontDescription(font))
+    description = Pango.FontDescription(font)
+    if style.bold:
+        description.set_weight(Pango.Weight.BOLD)
+    if style.italic:
+        description.set_style(Pango.Style.ITALIC)
+    layout.set_font_description(description)
+    layout.set_alignment(ALIGNMENTS.get(style.align, Pango.Alignment.LEFT))
     layout.set_text(text, -1)
-    if underline is not None:
-        attribute = Pango.attr_underline_new(Pango.Underline.SINGLE)
-        attribute.start_index, attribute.end_index = underline
-        attributes = Pango.AttrList()
+    attributes = Pango.AttrList()
+    # Without a range, an attribute covers all of the text.
+    if style.underline:
+        attributes.insert(Pango.attr_underline_new(Pango.Underline.SINGLE))
+    if style.strikethrough:
+        attributes.insert(Pango.attr_strikethrough_new(True))
+    if preedit is not None:
+        # Doubled when the text is underlined anyway, so it still stands out.
+        attribute = Pango.attr_underline_new(
+            Pango.Underline.DOUBLE if style.underline else Pango.Underline.SINGLE
+        )
+        attribute.start_index, attribute.end_index = preedit
         attributes.insert(attribute)
-        layout.set_attributes(attributes)
+    layout.set_attributes(attributes)
     return layout
 
 
@@ -62,13 +107,24 @@ class TextBox:
     caret methods below only ever run with no preedit showing.
     """
 
-    def __init__(self, x: float, y: float, color: Gdk.RGBA, font: str = DEFAULT_FONT):
+    def __init__(
+        self,
+        x: float,
+        y: float,
+        color: Gdk.RGBA,
+        font: str = DEFAULT_FONT,
+        style: TextStyle = PLAIN,
+        background: Gdk.RGBA | None = None,
+    ):
         self._text = ""
         self._preedit = ""
         self._preedit_cursor = 0
         self._font = font
+        self._style = style
         self._layout: Pango.Layout | None = None
         self.color = color
+        # What the box behind the text is filled with, when the style asks for one.
+        self.background = background
         self._caret = 0
         self.x = 0.0
         self.y = 0.0
@@ -90,6 +146,15 @@ class TextBox:
     @font.setter
     def font(self, value: str) -> None:
         self._font = value
+        self._layout = None
+
+    @property
+    def style(self) -> TextStyle:
+        return self._style
+
+    @style.setter
+    def style(self, value: TextStyle) -> None:
+        self._style = value
         self._layout = None
 
     @property
@@ -119,8 +184,8 @@ class TextBox:
         if self._layout is None:
             before, after = self._text[: self.caret], self._text[self.caret:]
             start = len(before.encode())
-            underline = (start, start + len(self._preedit.encode())) if self._preedit else None
-            self._layout = create_layout(before + self._preedit + after, self._font, underline)
+            preedit = (start, start + len(self._preedit.encode())) if self._preedit else None
+            self._layout = create_layout(before + self._preedit + after, self._font, self._style, preedit)
         return self._layout
 
     @property
@@ -207,26 +272,49 @@ class TextBox:
 
     # Drawing
 
-    def render(self, cr: cairo.Context, x: float | None = None, y: float | None = None) -> None:
+    def _paint(self, cr: cairo.Context, layout: Pango.Layout, x: float, y: float) -> None:
+        """The box behind, if there is one, then the text, with its top-left at (x, y)."""
         cr.save()
-        cr.move_to(self.x if x is None else x, self.y if y is None else y)
+        if self._style.background and self.background is not None:
+            width, height = layout.get_pixel_size()
+            color = self.background
+            cr.set_source_rgba(color.red, color.green, color.blue, color.alpha)
+            cr.rectangle(x, y, width, height)
+            cr.fill()
+        cr.move_to(x, y)
         cr.set_source_rgba(self.color.red, self.color.green, self.color.blue, self.color.alpha)
-        PangoCairo.show_layout(cr, self.layout)
+        PangoCairo.show_layout(cr, layout)
         cr.restore()
 
-    def render_surface(self) -> cairo.ImageSurface | None:
-        """The typed text on its own transparent surface, ready to be stamped down.
+    def render(self, cr: cairo.Context) -> None:
+        self._paint(cr, self.layout, self.x, self.y)
 
-        Any preedit is left out: it has not been typed yet.
+    def landing(self) -> tuple[cairo.ImageSurface, int, int] | None:
+        """The typed text on its own surface, ready to be stamped down, and where its
+        top-left corner goes; None when nothing has been typed.
+
+        It takes in everything the glyphs cover, which a slanted one can reach
+        past the box laid out for it. Any preedit is left out: it has not been
+        typed yet.
         """
         if not self._text:
             return None
-        layout = create_layout(self._text, self._font)
-        width, height = layout.get_pixel_size()
-        if width <= 0 or height <= 0:
+        layout = create_layout(self._text, self._font, self._style)
+        ink, logical = layout.get_pixel_extents()
+        left, top = min(ink.x, logical.x), min(ink.y, logical.y)
+        right = max(ink.x + ink.width, logical.x + logical.width)
+        bottom = max(ink.y + ink.height, logical.y + logical.height)
+        x, y = round(self.x), round(self.y)
+        # Whatever would fall above or left of the canvas is lost: it only
+        # grows right and down.
+        left, top = max(left, -x), max(top, -y)
+        if right <= left or bottom <= top:
             return None
-        surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, width, height)
-        cr = cairo.Context(surface)
-        cr.set_source_rgba(self.color.red, self.color.green, self.color.blue, self.color.alpha)
-        PangoCairo.show_layout(cr, layout)
-        return surface
+        surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, right - left, bottom - top)
+        self._paint(cairo.Context(surface), layout, -left, -top)
+        return surface, x + left, y + top
+
+    def render_surface(self) -> cairo.ImageSurface | None:
+        """The typed text on its own surface, as landing() lays it out."""
+        landing = self.landing()
+        return None if landing is None else landing[0]

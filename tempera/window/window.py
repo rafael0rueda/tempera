@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 
 from .. import APP_NAME, interface_size, recovery, shortcuts
@@ -15,6 +17,7 @@ from ..i18n import _
 from ..settings import load_palette_position, save_settings
 from ..preferences import PreferencesDialog
 from ..shortcuts_dialog import ShortcutsDialog
+from ..text import ALIGNMENTS, TEXT_SWITCHES
 from ..tools import DEFAULT_SHAPE, SHAPE_IDS, SHAPES_TOOL_ID
 from .edit import EditMixin
 from .files import FilesMixin
@@ -170,6 +173,17 @@ class TemperaWindow(
         shape_action.connect("change-state", self._unless_dragging(self._on_shape_changed))
         self.add_action(shape_action)
 
+        # How text looks, each a switch the options bar and its key share.
+        for name in TEXT_SWITCHES:
+            switch = Gio.SimpleAction.new_stateful(f"text-{name}", None, GLib.Variant.new_boolean(False))
+            switch.connect("change-state", self._on_text_switch_changed, name)
+            self.add_action(switch)
+        align = Gio.SimpleAction.new_stateful(
+            "text-align", GLib.VariantType.new("s"), GLib.Variant.new_string("left")
+        )
+        align.connect("change-state", self._on_text_align_changed)
+        self.add_action(align)
+
         transparent_action = Gio.SimpleAction.new_stateful(
             "transparent-selection", None, GLib.Variant.new_boolean(False)
         )
@@ -233,6 +247,16 @@ class TemperaWindow(
         action.set_state(value)
         self.lookup_action("tool").change_state(GLib.Variant.new_string(SHAPES_TOOL_ID))
         self._sync_tool_options()
+
+    def _on_text_switch_changed(self, action, value: GLib.Variant, name: str) -> None:
+        action.set_state(value)
+        self.canvas.text_style = replace(self.canvas.text_style, **{name: value.get_boolean()})
+
+    def _on_text_align_changed(self, action, value: GLib.Variant) -> None:
+        if value.get_string() not in ALIGNMENTS:
+            return
+        action.set_state(value)
+        self.canvas.text_style = replace(self.canvas.text_style, align=value.get_string())
 
     def _on_transparent_selection_changed(self, action, value: GLib.Variant) -> None:
         action.set_state(value)

@@ -121,7 +121,6 @@ class ToolOptionsMixin:
         self._syncing_shape_options = False
         self._add_page("shape", _row(self._outline_toggle, self._fill_toggle))
         self.colors.connect("changed", lambda *_args: self._sync_color_chips())
-        self._sync_color_chips()
 
         self._erase_check = Gtk.CheckButton(label=_("Erase to nothing"))
         self._erase_check.set_tooltip_text(
@@ -198,7 +197,49 @@ class ToolOptionsMixin:
             [Gtk.AccessibleProperty.DESCRIPTION], [_("Typeface for the text tool")]
         )
         self._font_button.connect("clicked", self._choose_font)
-        self._add_page("text", self._font_button)
+
+        # How the text looks: each button also answers to its key.
+        styles = Gtk.Box(valign=Gtk.Align.CENTER)
+        styles.add_css_class("linked")
+        for markup, text, action in (
+            ("<b>B</b>", "Bold", "win.text-bold"),
+            ("<i>I</i>", "Italic", "win.text-italic"),
+            ("<u>U</u>", "Underline", "win.text-underline"),
+            ("<s>S</s>", "Strikethrough", "win.text-strikethrough"),
+        ):
+            button = Gtk.ToggleButton(child=Gtk.Label(label=markup, use_markup=True))
+            button.add_css_class("tempera-option-toggle")
+            button.add_css_class("tempera-text-style")
+            self._add_shortcut_tooltip(button, text, action)
+            button.set_action_name(action)
+            styles.append(button)
+        alignment = Gtk.Box(valign=Gtk.Align.CENTER)
+        alignment.add_css_class("linked")
+        for value, text in (("left", "Align Left"), ("center", "Center"), ("right", "Align Right")):
+            button = Gtk.ToggleButton(icon_name=f"tempera-align-{value}-symbolic")
+            button.add_css_class("tempera-option-toggle")
+            self._add_shortcut_tooltip(button, text, f"win.text-align::{value}")
+            button.set_action_name("win.text-align")
+            button.set_action_target_value(GLib.Variant.new_string(value))
+            alignment.append(button)
+        # The box behind the text wears the colour it is filled with.
+        self._background_chip = ColorChip(filled=True)
+        background = self._option_toggle(
+            _("Background"), self._background_chip, _("Put the text on a box of the secondary colour")
+        )
+        background.set_action_name("win.text-background")
+        self._add_page(
+            "text",
+            _row(
+                self._font_button,
+                _bar_separator(),
+                styles,
+                _bar_separator(),
+                alignment,
+                _bar_separator(),
+                background,
+            ),
+        )
 
         self._sync_color_chips()
         self._sync_size_scale()
@@ -295,6 +336,7 @@ class ToolOptionsMixin:
         self._fill_chip.color = self.colors.secondary
         for chip in self._left_out_chips:
             chip.color = self.colors.secondary
+        self._background_chip.color = self.colors.secondary
 
     def _sync_shape_options(self) -> None:
         """Show what the shape in hand will draw: a line is all outline, whatever is set."""

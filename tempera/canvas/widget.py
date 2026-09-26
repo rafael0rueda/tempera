@@ -15,7 +15,7 @@ from ..document import Document
 from ..i18n import _
 from ..interface_size import scaled
 from ..selection import Selection
-from ..text import DEFAULT_FONT, TextBox
+from ..text import DEFAULT_FONT, TextBox, TextStyle
 from ..tools import (
     AIRBRUSH_TOOL_ID,
     DEFAULT_DENSITY,
@@ -79,6 +79,7 @@ class Canvas(
         self.airbrush_density = DEFAULT_DENSITY
         self._show_pixel_grid = False
         self.font = DEFAULT_FONT
+        self._text_style = TextStyle()
         self.zoom = 1.0
 
         self._document: Document | None = None
