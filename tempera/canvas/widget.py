@@ -100,6 +100,10 @@ class Canvas(
         self._blink_source = 0
         # Raw widget-space pointer position, for Ctrl+scroll to zoom around.
         self._last_pointer: tuple[float, float] = (0.0, 0.0)
+        # A slow press, such as a fill, still at work off the UI thread, and
+        # where the button was let go if that happened first.
+        self._working = False
+        self._pending_release: tuple[float, float] | None = None
 
         # Anchored top-left like the image itself; CanvasFrame does the centering.
         self.set_halign(Gtk.Align.START)
@@ -205,8 +209,8 @@ class Canvas(
 
     @property
     def is_dragging(self) -> bool:
-        """Whether a button is held down: a stroke, move or resize is under way."""
-        return self._drag_origin is not None
+        """Whether a stroke, move or resize is under way: a button is held, or a fill still at work."""
+        return self._drag_origin is not None or self._working
 
     def select_tool(self, tool_id: str) -> None:
         self.finish_shape()

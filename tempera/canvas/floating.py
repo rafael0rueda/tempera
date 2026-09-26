@@ -306,6 +306,9 @@ class FloatingMixin:
         self._refresh_text()
 
     def _on_key_pressed(self, controller, keyval, keycode, state) -> bool:
+        if self._working:
+            # A fill is still painting; Delete or a nudge would paint under it.
+            return False
         if self._text is not None:
             return self._on_text_key(keyval, state)
         if self.active_tool.in_progress:

@@ -5,6 +5,7 @@ python.install_sources(
   files(
     '__init__.py',
     '__main__.py',
+    'background.py',
     'clipboard.py',
     'color.py',
     'document.py',

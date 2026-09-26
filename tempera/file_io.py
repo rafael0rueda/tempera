@@ -4,12 +4,12 @@
 from __future__ import annotations
 
 import os
-import threading
 from typing import Callable
 
 import cairo
 from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Gtk
 
+from .background import run_in_background
 from .document import MAX_SIZE, Document, new_surface, surface_from_pixbuf
 from .i18n import _
 
@@ -253,19 +253,6 @@ def save_document(document: Document, file: Gio.File, quality: int = 90) -> None
     document.mark_saved(depth)
 
 
-def _in_thread(work: Callable[[], object], done: Callable[[object | GLib.Error], None]) -> None:
-    """Run work off the UI thread and hand what it returns, or raises, back to it."""
-
-    def run():
-        try:
-            result = work()
-        except GLib.Error as error:
-            result = error
-        GLib.idle_add(lambda: (done(result), False)[1])
-
-    threading.Thread(target=run, daemon=True).start()
-
-
 def load_surface_async(
     file: Gio.File,
     on_surface: Callable[[cairo.ImageSurface], None],
@@ -279,7 +266,7 @@ def load_surface_async(
         else:
             on_surface(result)
 
-    _in_thread(lambda: load_surface(file), done)
+    run_in_background(lambda: load_surface(file), done)
 
 
 def load_document_async(
@@ -328,4 +315,4 @@ def save_document_async(
             result, None, False, Gio.FileCreateFlags.NONE, None, on_written
         )
 
-    _in_thread(lambda: encode_image(pixbuf, image_format, quality), done)
+    run_in_background(lambda: encode_image(pixbuf, image_format, quality), done)

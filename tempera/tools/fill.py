@@ -27,7 +27,8 @@ def _row_masks(surface: cairo.ImageSurface, target: bytes, tolerance: int):
 
     The per-pixel comparison happens inside bytes.translate() and big-integer
     ANDs rather than in Python, one row at a time and only for the rows the
-    fill actually reaches.
+    fill actually reaches. A row all of the target colour, the usual case when
+    filling a background, is matched whole with one comparison.
     """
     width, stride = surface.get_width(), surface.get_stride()
     data = surface.get_data()
@@ -35,24 +36,34 @@ def _row_masks(surface: cairo.ImageSurface, target: bytes, tolerance: int):
         bytes(1 if abs(value - channel) <= tolerance else 0 for value in range(256))
         for channel in target
     ]
+    uniform = target * width
+    everything = b"\x01" * width
 
     def row_mask(y: int) -> bytearray:
-        pixels = data[y * stride:y * stride + width * 4]
+        # One contiguous copy of the row: picking every fourth byte out of a
+        # bytes object is several times quicker than out of a memoryview.
+        pixels = data[y * stride:y * stride + width * 4].tobytes()
+        if pixels == uniform:
+            return bytearray(everything)
         combined = -1
         for channel, table in enumerate(tables):
-            matched = pixels[channel::4].tobytes().translate(table)
+            matched = pixels[channel::4].translate(table)
             combined &= int.from_bytes(matched, "little")
         return bytearray(combined.to_bytes(width, "little"))
 
     return row_mask
 
 
-def flood_fill(surface: cairo.ImageSurface, x: int, y: int, color: Gdk.RGBA,
-               tolerance: int = TOLERANCE) -> bool:
-    """Scanline flood fill over the surface's ARGB32 buffer."""
+def flood_fill(
+    surface: cairo.ImageSurface, x: int, y: int, color: Gdk.RGBA, tolerance: int = TOLERANCE
+) -> tuple[int, int, int, int] | None:
+    """Scanline flood fill over the surface's ARGB32 buffer.
+
+    Returns the rectangle it painted over, or None when it changed nothing.
+    """
     width, height = surface.get_width(), surface.get_height()
     if not (0 <= x < width and 0 <= y < height):
-        return False
+        return None
 
     surface.flush()
     stride = surface.get_stride()
@@ -64,13 +75,15 @@ def flood_fill(surface: cairo.ImageSurface, x: int, y: int, color: Gdk.RGBA,
 
     # Filling with a colour that still matches the target would never terminate.
     if all(abs(replacement[i] - target[i]) <= tolerance for i in range(4)):
-        return False
+        return None
 
     row_mask = _row_masks(surface, target, tolerance)
     # Built as the fill reaches each row. A filled span is zeroed in its mask,
     # so it is never matched, or filled, twice.
     masks: list[bytearray | None] = [None] * height
     replacement_bytes = bytes(replacement)
+    # The bounds of everything painted, as [left, right) and [top, bottom).
+    bounds = [width, height, 0, 0]
 
     stack = [(x, y)]
     while stack:
@@ -89,6 +102,10 @@ def flood_fill(surface: cairo.ImageSurface, x: int, y: int, color: Gdk.RGBA,
         mask[left:right] = bytes(right - left)
         row = seed_y * stride
         data[row + left * 4:row + right * 4] = replacement_bytes * (right - left)
+        bounds[0] = min(bounds[0], left)
+        bounds[1] = min(bounds[1], seed_y)
+        bounds[2] = max(bounds[2], right)
+        bounds[3] = max(bounds[3], seed_y + 1)
 
         for neighbour_y in (seed_y - 1, seed_y + 1):
             if not 0 <= neighbour_y < height:
@@ -106,7 +123,8 @@ def flood_fill(surface: cairo.ImageSurface, x: int, y: int, color: Gdk.RGBA,
                 scan = neighbour.find(1, end, right)
 
     surface.mark_dirty()
-    return True
+    left, top, right, bottom = bounds
+    return left, top, right - left, bottom - top
 
 
 class FillTool(Tool):
@@ -114,6 +132,7 @@ class FillTool(Tool):
     label = _("Fill")
     icon_name = "tempera-fill-symbolic"
     tip_icon_name = "tempera-fill-tip-symbolic"
+    background = True
 
     def colors_used(self, ctx: ToolContext):
         return (ctx.color,)

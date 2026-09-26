@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from gi.repository import Gdk, GLib
 
+from ..background import run_in_background
 from ..document import MAX_SIZE
 from ..interface_size import scaled
 from ..tools import ToolContext
@@ -198,6 +199,9 @@ class PointerMixin:
         if gesture.get_current_button() == Gdk.BUTTON_MIDDLE:
             # The middle button pans the view; it does not paint.
             return
+        if self._working:
+            # The last fill is not done yet; this press would paint under it.
+            return
         start_x, start_y = self._to_image(start_x, start_y)
         self._drag_origin = (start_x, start_y)
 
@@ -287,10 +291,46 @@ class PointerMixin:
         self._drag_context = self._make_context(self._shape_button)
         if self.active_tool.mutates:
             self._document.begin_change()
-        self.active_tool.press(self._drag_context, start_x, start_y)
+        if self.active_tool.background:
+            self._press_in_background(start_x, start_y)
+        else:
+            self.active_tool.press(self._drag_context, start_x, start_y)
         if self.active_tool.repeat_ms:
             self._repeat_source = GLib.timeout_add(self.active_tool.repeat_ms, self._on_repeat)
         self.queue_draw()
+
+    def _press_in_background(self, x: float, y: float) -> None:
+        """Run a slow press, such as a fill, off the UI thread.
+
+        The stroke lasts until it is done, whenever the button is let go: the
+        canvas takes no other press or key meanwhile, and the actions that
+        change the image wait, as they do for any drag.
+        """
+        tool, context = self.active_tool, self._drag_context
+        self._working = True
+        self.set_cursor(Gdk.Cursor.new_from_name("progress"))
+
+        def work() -> Exception | None:
+            try:
+                tool.press(context, x, y)
+            except Exception as error:
+                # Handed back rather than lost with the thread, so the stroke
+                # still ends and the error still shows.
+                return error
+            return None
+
+        def done(error: Exception | None) -> None:
+            self._working = False
+            self._set_cursor(None)
+            if self._pending_release is not None:
+                release, self._pending_release = self._pending_release, None
+                self._finish_stroke(*release)
+            else:
+                self.queue_draw()
+            if error is not None:
+                raise error
+
+        run_in_background(work, done)
 
     def _on_repeat(self) -> bool:
         if self._drag_context is None:
@@ -345,7 +385,7 @@ class PointerMixin:
             self.queue_draw()
             return
 
-        if self._drag_context is None:
+        if self._drag_context is None or self._working:
             return
 
         self._drag_context.constrain = bool(
@@ -411,6 +451,15 @@ class PointerMixin:
         self._drag_context.constrain = bool(
             gesture.get_current_event_state() & Gdk.ModifierType.SHIFT_MASK
         )
+        if self._working:
+            # The press is still at work; the stroke ends once it is done.
+            self._pending_release = (x, y)
+            self._drag_origin = None
+            return
+        self._finish_stroke(x, y)
+
+    def _finish_stroke(self, x: float, y: float) -> None:
+        """Let the tool finish, and keep what it painted as one step to undo."""
         self.active_tool.release(self._drag_context, x, y)
         if self.active_tool.mutates:
             self._document.finish_change()

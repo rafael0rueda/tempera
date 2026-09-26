@@ -96,6 +96,9 @@ class Tool:
     # The part of the icon that paints, drawn over it in the primary colour.
     tip_icon_name = ""
     mutates = True
+    # Whether press() is slow enough to run off the UI thread, as a fill of a
+    # big image is. Such a press must touch nothing but ctx.surface.
+    background = False
     # Whether the size in the tool options applies: a brush width, a line
     # width, or for text the font size.
     sized = False
