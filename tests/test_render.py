@@ -246,7 +246,8 @@ def test_a_selection_moved_on_the_bottom_layer_leaves_white(layered):
     # Grabbed in the middle, clear of its grips, and moved up.
     layered._on_drag_begin(gesture, 46, 46)
     layered._on_drag_update(gesture, 0, -30)
-    assert shown(layered, 46, 50) == WHITE_PIXEL
+    # A corner of where it was, clear of the grip that turns it, below it now.
+    assert shown(layered, 38, 53) == WHITE_PIXEL
     # The middle of where it floats now, clear of its grips.
     assert shown(layered, 46, 16) == BLUE_PIXEL
     layered._on_drag_end(gesture, 0, -30)

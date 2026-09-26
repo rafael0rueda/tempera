@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+import math
+
 
 from gi.repository import Gdk, Gio, GObject, Gtk
 
@@ -29,7 +31,7 @@ from ..tools import (
     create_tools,
 )
 from .floating import FloatingMixin, FloatingPaste
-from .pointer import HANDLE_MARGIN, PointerMixin
+from .pointer import HANDLE_MARGIN, HANDLE_RING, HANDLE_SIZE, PointerMixin
 from .render import RenderMixin
 from .selecting import SelectionMixin
 from .view import PIXEL_GRID_ZOOM, ZoomMixin
@@ -101,6 +103,9 @@ class Canvas(
         self._paste_origin: tuple[float, float] | None = None
         self._paste_resize_handle: str | None = None
         self._paste_resize_origin: tuple[float, float, float, float] | None = None
+        # A grip that turns, skews, or stretches a turned paste, taken hold of:
+        # (what it does, the grip, where the pointer was, the paste as it was).
+        self._paste_grab: tuple | None = None
         self._text: TextBox | None = None
         self._text_origin: tuple[float, float] | None = None
         self._text_moved = False
@@ -209,6 +214,13 @@ class Canvas(
             float_x, float_y, float_width, float_height = bounds
             width = max(width, round(float_x) + float_width)
             height = max(height, round(float_y) + float_height)
+        grip = self._handles().get("rotate")
+        if grip is not None:
+            # The grip that turns a selection may hang below it, off the image:
+            # there has to be canvas under it to take hold of it.
+            reach = scaled(HANDLE_SIZE) / 2 + scaled(HANDLE_RING)
+            width = max(width, math.ceil(grip[0] + reach))
+            height = max(height, math.ceil(grip[1] + reach))
         # The margin scales with zoom too, so it stays big enough to fit the
         # (also zoomed) resize handles without clipping them at the edge.
         margin = round(scaled(HANDLE_MARGIN) * self.zoom)

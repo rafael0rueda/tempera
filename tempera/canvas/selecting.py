@@ -35,6 +35,8 @@ class SelectionMixin:
         if selection == self._selection:
             return
         self._selection = selection
+        # Its grip may need room past the image.
+        self._sync_content_size()
         self.queue_draw()
         self.emit("selection-changed")
 

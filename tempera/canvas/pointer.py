@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import replace
 
 from gi.repository import Gdk, GLib
@@ -14,7 +15,7 @@ from ..document import MAX_SIZE
 from ..interface_size import scaled
 from ..tools import WAND_TOOL_ID, ToolContext
 from ..tools.base import rect_handles
-from .floating import TEXT_PADDING
+from .floating import SIDE_GRIPS, TEXT_PADDING, rotate_grip
 
 # The resize grips, at the default interface size; they grow with it.
 HANDLE_SIZE = 10
@@ -39,9 +40,21 @@ HANDLE_CURSORS = {
     "nw": "nwse-resize",
     "se": "nwse-resize",
     "paste": "move",
+    "rotate": "grab",
+    "rotating": "grabbing",
     "text": "text",
     "selection": "move",
 }
+
+
+# The grips that stretch, as against the one that turns.
+RESIZE_GRIPS = ("n", "ne", "e", "se", "s", "sw", "w", "nw")
+
+
+def resize_cursor(dx: float, dy: float) -> str:
+    """The resize cursor pointing most nearly the way (dx, dy) does."""
+    sector = round(math.degrees(math.atan2(dy, dx)) / 45) % 4
+    return ("ew-resize", "nwse-resize", "ns-resize", "nesw-resize")[sector]
 
 
 class PointerMixin:
@@ -49,8 +62,8 @@ class PointerMixin:
 
     def _handles(self) -> dict[str, tuple[float, float]]:
         if self._paste is not None:
-            # Scales the pasted pixels rather than the canvas.
-            return rect_handles(self._paste.x, self._paste.y, self._paste.width, self._paste.height)
+            # Scale, turn or skew the pasted pixels rather than the canvas.
+            return self._paste.handles()
         if self.active_tool.adjustable:
             # A shape that has been drawn but not landed: its own grips reshape it.
             return self.active_tool.handles()
@@ -59,8 +72,10 @@ class PointerMixin:
             # placed takes every click, even on the edge of the image.
             return {}
         if self.selecting and self._selection is not None:
-            # Scales the selected pixels in place.
-            return rect_handles(*self._selection.rect)
+            # Scale or turn the selected pixels in place.
+            grips = rect_handles(*self._selection.rect)
+            grips["rotate"] = rotate_grip(*self._selection.rect)[0]
+            return grips
         width, height = self._resize_size or (self._document.width, self._document.height)
         return {
             "e": (width, height / 2),
@@ -93,6 +108,37 @@ class PointerMixin:
         self.queue_draw()
         self.emit("floating-changed")
 
+    def _grab_paste(self, handle: str, x: float, y: float, skew: bool) -> None:
+        """Take hold of one of a floating paste's grips: to turn it, skew it or stretch it."""
+        paste = self._paste
+        if handle == "rotate":
+            kind = "rotate"
+        elif skew and handle in SIDE_GRIPS:
+            kind = "skew"
+        elif paste.transformed:
+            kind = "resize"
+        else:
+            # Upright, it stretches along the image's own sides.
+            self._paste_resize_handle = handle
+            self._paste_resize_origin = (paste.x, paste.y, paste.width, paste.height)
+            self._set_cursor(handle)
+            return
+        # How it was, for each move of the pointer to be measured from.
+        self._paste_grab = (kind, handle, (x, y), replace(paste))
+        self._set_cursor("rotating" if kind == "rotate" else handle)
+
+    def _follow_paste_grab(self, x: float, y: float, shift: bool) -> None:
+        kind, handle, start, grabbed = self._paste_grab
+        if kind == "rotate":
+            self._paste.rotate_from(grabbed, start, (x, y), snap=shift)
+        elif kind == "skew":
+            self._paste.skew_from(grabbed, handle, start, (x, y))
+        else:
+            self._paste.resize_from(grabbed, handle, (x, y))
+        self._sync_content_size()
+        self.queue_draw()
+        self.emit("floating-changed")
+
     def _shape_reach(self) -> float:
         """How near a pending shape a press has to land to take hold of it."""
         return scaled(POINT_REACH) / self.zoom + self._brush_size / 2
@@ -113,8 +159,12 @@ class PointerMixin:
         packs all 8 into less room than the grab tolerance around each one."""
         best: str | None = None
         best_distance = None
-        box_x, box_y, box_width, box_height = self._handle_box()
-        if box_x < x < box_x + box_width and box_y < y < box_y + box_height:
+        if self._paste is not None:
+            inside = self._paste.contains(x, y)
+        else:
+            box_x, box_y, box_width, box_height = self._handle_box()
+            inside = box_x < x < box_x + box_width and box_y < y < box_y + box_height
+        if inside:
             # From inside, only the grip as drawn: the rest of a small selection
             # or paste is for dragging it somewhere else, and of the image for painting.
             grab = scaled(HANDLE_SIZE) / 2
@@ -128,6 +178,13 @@ class PointerMixin:
         return best
 
     def _set_cursor(self, handle: str | None) -> None:
+        paste = self._paste
+        if paste is not None and paste.transformed and handle in RESIZE_GRIPS:
+            # Turned, a grip pulls the way it now faces.
+            hx, hy = paste.handles()[handle]
+            cx, cy = paste.center
+            self.set_cursor(Gdk.Cursor.new_from_name(resize_cursor(hx - cx, hy - cy)))
+            return
         if handle is not None and handle not in HANDLE_CURSORS:
             # A grip on one of a shape's own points, which goes anywhere.
             name = "move"
@@ -228,14 +285,8 @@ class PointerMixin:
 
         if self._paste is not None:
             if handle is not None:
-                self._paste_resize_handle = handle
-                self._paste_resize_origin = (
-                    self._paste.x,
-                    self._paste.y,
-                    self._paste.width,
-                    self._paste.height,
-                )
-                self._set_cursor(handle)
+                # Ctrl on a side grip skews what floats, rather than stretch it.
+                self._grab_paste(handle, start_x, start_y, skew=copy)
                 return
             if self._paste.contains(start_x, start_y):
                 self._paste_origin = (self._paste.x, self._paste.y)
@@ -266,14 +317,8 @@ class PointerMixin:
         # separate gesture to first lift it the way moving it needs.
         if self.selecting and self._selection is not None and handle is not None:
             self._lift_selection(copy)
-            self._paste_resize_handle = handle
-            self._paste_resize_origin = (
-                self._paste.x,
-                self._paste.y,
-                self._paste.width,
-                self._paste.height,
-            )
-            self._set_cursor(handle)
+            # Ctrl already says to copy here, so it does not also skew.
+            self._grab_paste(handle, start_x, start_y, skew=False)
             return
 
         # Only the select tool picks the pixels up; the others paint over them.
@@ -370,6 +415,12 @@ class PointerMixin:
             self._refresh_text()
             return
 
+        if self._paste_grab is not None:
+            self._follow_paste_grab(
+                x, y, bool(gesture.get_current_event_state() & Gdk.ModifierType.SHIFT_MASK)
+            )
+            return
+
         if self._paste_resize_handle is not None:
             self._resize_paste(x, y)
             return
@@ -418,6 +469,15 @@ class PointerMixin:
             self._text_moved = False
             self._drag_origin = None
             self._refresh_text()
+            return
+
+        if self._paste_grab is not None:
+            self._follow_paste_grab(
+                x, y, bool(gesture.get_current_event_state() & Gdk.ModifierType.SHIFT_MASK)
+            )
+            self._paste_grab = None
+            self._drag_origin = None
+            self._set_cursor(None)
             return
 
         if self._paste_resize_handle is not None:

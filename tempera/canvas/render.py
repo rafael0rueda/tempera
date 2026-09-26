@@ -15,7 +15,7 @@ from ..document import Damage, Layer
 from ..interface_size import scaled
 from ..tools import draw_marquee
 from ..tools.base import draw_edges_marquee, draw_outline_marquee
-from .floating import TEXT_PADDING
+from .floating import TEXT_PADDING, rotate_grip
 from .pointer import HANDLE_RADIUS, HANDLE_RING, HANDLE_SIZE
 from .tiles import ImageTiles, mask_texture, surface_texture
 
@@ -193,6 +193,10 @@ class RenderMixin:
         bounds = _rect(x * zoom, y * zoom, width * zoom, height * zoom)
         snapshot.push_mask(Gsk.MaskMode.INVERTED_ALPHA)
         if paste.source_mask is None:
+            if zoom < SMOOTH_ZOOM_BELOW:
+                # Shrunk smoothly, the pixels taken blur a little past where
+                # they were; a screen pixel more of hole hides the fringe.
+                bounds = _rect(x * zoom - 1, y * zoom - 1, width * zoom + 2, height * zoom + 2)
             snapshot.append_color(Gdk.RGBA(red=0, green=0, blue=0, alpha=1), bounds)
         else:
             snapshot.append_scaled_texture(
@@ -205,26 +209,30 @@ class RenderMixin:
     ) -> None:
         """Draw with cairo, over no more of the screen than what is drawn covers.
 
-        It is recorded first, and the recording played back into a cairo node
-        just the size of what it holds: most of the time that is nothing, or a
-        small box, rather than the whole view.
+        It is drawn once into a recording, just to learn how much it covers:
+        most of the time that is nothing, or a small box, rather than the
+        whole view. Then it is drawn again into a node that size. Playing the
+        recording back instead would be one drawing rather than two, but GTK's
+        GPU renderers lose dashed lines at an angle from it.
         """
+        def prepare(cr: cairo.Context) -> None:
+            cr.rectangle(*visible)
+            cr.clip()
+            # Laid out in image pixels; this one transform is what makes it
+            # appear at the current zoom level on screen.
+            cr.scale(self.zoom, self.zoom)
+
         recording = cairo.RecordingSurface(cairo.CONTENT_COLOR_ALPHA, None)
         cr = cairo.Context(recording)
-        cr.rectangle(*visible)
-        cr.clip()
-        # Laid out in image pixels; this one transform is what makes it appear
-        # at the current zoom level on screen.
-        cr.scale(self.zoom, self.zoom)
+        prepare(cr)
         draw(cr)
         x, y, width, height = recording.ink_extents()
         if width <= 0 or height <= 0:
             return
         left, top = math.floor(x), math.floor(y)
-        bounds = _rect(left, top, math.ceil(x + width) - left, math.ceil(y + height) - top)
-        cr = snapshot.append_cairo(bounds)
-        cr.set_source_surface(recording, 0, 0)
-        cr.paint()
+        cr = snapshot.append_cairo(_rect(left, top, math.ceil(x + width) - left, math.ceil(y + height) - top))
+        prepare(cr)
+        draw(cr)
 
     def _draw_bottom_extras(self, cr: cairo.Context) -> None:
         """What floats leaves white on the bottom layer: where a paste or text makes
@@ -242,9 +250,7 @@ class RenderMixin:
                 else:
                     cr.mask_surface(paste.source_mask, paste.source[0], paste.source[1])
                 cr.restore()
-            self._draw_overhang(
-                cr, paste.x, paste.y, paste.width, paste.height, image_width, image_height
-            )
+            self._draw_overhang(cr, *paste.bounds(), image_width, image_height)
         text = self._text
         if text is not None:
             width, height = text.size
@@ -264,17 +270,8 @@ class RenderMixin:
             self.active_tool.draw_preview(cr, context)
             cr.restore()
 
-        paste = self._paste
-        if paste is not None:
-            cr.save()
-            cr.rectangle(paste.x, paste.y, paste.width, paste.height)
-            cr.clip()
-            cr.translate(paste.x, paste.y)
-            cr.scale(paste.scale_x, paste.scale_y)
-            cr.set_source_surface(paste.surface, 0, 0)
-            cr.get_source().set_filter(cairo.FILTER_NEAREST)
-            cr.paint()
-            cr.restore()
+        if self._paste is not None:
+            self._paste.paint(cr)
 
         text = self._text
         if text is not None:
@@ -295,7 +292,11 @@ class RenderMixin:
             self._draw_resize_preview(cr, accent, image_width, image_height)
         paste = self._paste
         if paste is not None:
-            self._draw_dashed_rect(cr, accent, paste.x, paste.y, paste.width, paste.height)
+            if paste.transformed:
+                self._draw_dashed_outline(cr, accent, paste.corners())
+            else:
+                self._draw_dashed_rect(cr, accent, paste.x, paste.y, paste.width, paste.height)
+        self._draw_rotate_stalk(cr, accent)
         if self._text is not None:
             self._draw_text_frame(cr, accent)
         selection = self._selection
@@ -347,6 +348,47 @@ class RenderMixin:
         cr.set_line_width(1)
         cr.set_dash([4, 3])
         cr.rectangle(x + 0.5, y + 0.5, width - 1, height - 1)
+        cr.stroke()
+        cr.restore()
+
+    @staticmethod
+    def _draw_dashed_outline(cr: cairo.Context, accent: Gdk.RGBA, corners) -> None:
+        """The dashed line around a turned or skewed paste.
+
+        At an angle it runs across pixels rather than between them, blurred
+        over the edge of what it outlines; dashes over a white line show on
+        anything, as the white ring around a grip does.
+        """
+        cr.save()
+        # One screen pixel wide, whatever the zoom, as the upright one is.
+        x_scale, _y_scale = cr.user_to_device_distance(1, 0)
+        cr.move_to(*corners[0])
+        for corner in corners[1:]:
+            cr.line_to(*corner)
+        cr.close_path()
+        cr.set_line_width(2 / x_scale)
+        cr.set_source_rgb(1, 1, 1)
+        cr.stroke_preserve()
+        cr.set_line_width(1.25 / x_scale)
+        cr.set_dash([4 / x_scale, 3 / x_scale])
+        cr.set_source_rgba(accent.red, accent.green, accent.blue, 1.0)
+        cr.stroke()
+        cr.restore()
+
+    def _draw_rotate_stalk(self, cr: cairo.Context, accent: Gdk.RGBA) -> None:
+        """A short line from the middle of the top edge to the grip that turns it."""
+        if "rotate" not in self._handles():
+            return
+        if self._paste is not None:
+            grip, anchor = self._paste.rotate_grip()
+        else:
+            grip, anchor = rotate_grip(*self._selection.rect)
+        cr.save()
+        cr.set_source_rgba(accent.red, accent.green, accent.blue, 1.0)
+        x_scale, _y_scale = cr.user_to_device_distance(1, 0)
+        cr.set_line_width(1.5 / x_scale)
+        cr.move_to(*anchor)
+        cr.line_to(*grip)
         cr.stroke()
         cr.restore()
 
@@ -425,9 +467,12 @@ class RenderMixin:
         )
         snapshot.save()
         snapshot.scale(self.zoom, self.zoom)
-        for hx, hy in handles.values():
+        for name, (hx, hy) in handles.items():
             for extent, corner, color in layers:
                 half = extent / 2
+                if name == "rotate":
+                    # Round, to tell it from the grips that stretch.
+                    corner = half
                 square = _rect(hx - half, hy - half, extent, extent)
                 # Built in steps: what init_from_rect() returns points into the
                 # temporary struct it was called on, which is freed straight away.
