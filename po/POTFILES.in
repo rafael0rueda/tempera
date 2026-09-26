@@ -5,9 +5,11 @@ data/io.github.rafael0rueda.Tempera.metainfo.xml.in
 tempera/canvas/floating.py
 tempera/canvas/widget.py
 tempera/clipboard.py
+tempera/document.py
 tempera/color.py
 tempera/file_io.py
 tempera/main.py
+tempera/openraster.py
 tempera/preferences.py
 tempera/printing.py
 tempera/shortcuts.py

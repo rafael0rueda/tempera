@@ -216,7 +216,7 @@ def image_to_save(document: Document, file: Gio.File) -> tuple[GdkPixbuf.Pixbuf,
         # These formats have no alpha channel, so composite onto white first.
         flattened = new_surface(document.width, document.height)
         cr = cairo.Context(flattened)
-        cr.set_source_surface(document.surface, 0, 0)
+        cr.set_source_surface(document.flattened(), 0, 0)
         cr.paint()
         flattened.flush()
         with_alpha = Gdk.pixbuf_get_from_surface(flattened, 0, 0, document.width, document.height)

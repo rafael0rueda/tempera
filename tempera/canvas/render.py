@@ -11,12 +11,13 @@ from functools import cache
 import cairo
 from gi.repository import Adw, Gdk, Graphene, Gsk, Gtk
 
+from ..document import Damage, Layer
 from ..interface_size import scaled
 from ..tools import draw_marquee
 from ..tools.base import draw_outline_marquee
 from .floating import TEXT_PADDING
 from .pointer import HANDLE_RADIUS, HANDLE_RING, HANDLE_SIZE
-from .tiles import ImageTiles, surface_texture
+from .tiles import ImageTiles, mask_texture, surface_texture
 
 CHECKER_SIZE = 8
 # Below this zoom the image is shrunk, where smoothing reads better than dropped
@@ -45,21 +46,41 @@ def _rect(x: float, y: float, width: float, height: float) -> Graphene.Rect:
 
 
 class RenderMixin:
-    """Draws the image, a tool's preview, and the outlines and grips over them.
+    """Draws the layers, what floats over them, and the outlines and grips on top.
 
-    The image goes to the GPU as tiles of texture, which it scales to the zoom
-    by itself, and only the tiles a change touched are uploaded again. What is
-    drawn over it with cairo covers just the part of the screen it takes up.
+    Each layer goes to the GPU as tiles of texture, which it scales to the
+    zoom and blends at the layer's opacity by itself, and only the tiles a
+    change touched are uploaded again. What is drawn with cairo covers just the
+    part of the screen it takes up.
     """
 
     def _init_render(self) -> None:
-        self._tiles = ImageTiles()
+        # Each layer's textures, for as long as the layer is in the picture.
+        self._tiles: dict[Layer, ImageTiles] = {}
+
+    def _layer_tiles(self, layer: Layer) -> ImageTiles:
+        tiles = self._tiles.get(layer)
+        if tiles is None:
+            tiles = self._tiles[layer] = ImageTiles()
+        return tiles
 
     def _damage(self, x1: float, y1: float, x2: float, y2: float) -> None:
-        """A tool painted within these extents; their tiles need uploading again."""
+        """A tool painted within these extents of the current layer; their tiles need uploading again."""
         # Antialiasing reaches into the pixels the extents only partly cover.
         left, top = math.floor(x1) - 1, math.floor(y1) - 1
-        self._tiles.invalidate((left, top, math.ceil(x2) + 1 - left, math.ceil(y2) + 1 - top))
+        rect = (left, top, math.ceil(x2) + 1 - left, math.ceil(y2) + 1 - top)
+        self._layer_tiles(self._document.layer).invalidate(rect)
+
+    def _invalidate(self, damage: Damage) -> None:
+        """Forget the textures a change to the document touched."""
+        if damage is None:
+            for tiles in self._tiles.values():
+                tiles.invalidate()
+            return
+        for layer, rect in damage:
+            tiles = self._tiles.get(layer)
+            if tiles is not None:
+                tiles.invalidate(rect)
 
     def _visible_area(self) -> tuple[float, float, float, float]:
         """The part of the canvas in view, in its own coordinates."""
@@ -119,36 +140,83 @@ class RenderMixin:
                 _checker_texture(), Gsk.ScalingFilter.NEAREST, _rect(0, 0, checker, checker)
             )
             snapshot.pop()
-            scaling = (
-                Gsk.ScalingFilter.NEAREST if zoom >= SMOOTH_ZOOM_BELOW else Gsk.ScalingFilter.TRILINEAR
-            )
-            self._tiles.snapshot(
-                snapshot,
-                document.surface,
-                (left, top, right - left, bottom - top),
-                zoom,
-                scaling,
-                self._pixel_aligner(),
-            )
+            self._snapshot_layers(snapshot, visible, (left, top, right - left, bottom - top))
 
         accent = self._accent()
-        self._snapshot_overlays(snapshot, visible, accent)
+        self._snapshot_cairo(snapshot, visible, lambda cr: self._draw_chrome(cr, accent))
         self._snapshot_handles(snapshot, accent)
 
-    def _snapshot_overlays(
-        self, snapshot: Gtk.Snapshot, visible: tuple[float, float, float, float], accent: Gdk.RGBA
+    def _snapshot_layers(
+        self,
+        snapshot: Gtk.Snapshot,
+        visible: tuple[float, float, float, float],
+        region: tuple[float, float, float, float],
     ) -> None:
-        """Draw the previews and outlines with cairo, over no more than they cover.
+        """The layers bottom up, each at its opacity, with what floats over the
+        current one drawn right above it, where it will land."""
+        document, zoom = self._document, self.zoom
+        scaling = Gsk.ScalingFilter.NEAREST if zoom >= SMOOTH_ZOOM_BELOW else Gsk.ScalingFilter.TRILINEAR
+        align = self._pixel_aligner()
+        vacating = self._paste is not None and self._paste.source is not None
+        for index, layer in enumerate(document.layers):
+            current = index == document.current
+            # What floats over a hidden layer still shows while it is placed.
+            if not layer.visible and not current:
+                continue
+            see_through = layer.visible and layer.opacity < 1
+            if see_through:
+                snapshot.push_opacity(layer.opacity)
+            if layer.visible:
+                if current and vacating:
+                    # A selection being moved has left its place empty.
+                    self._push_vacated_mask(snapshot)
+                self._layer_tiles(layer).snapshot(snapshot, layer.surface, region, zoom, scaling, align)
+                if current and vacating:
+                    snapshot.pop()
+                if index == 0:
+                    self._snapshot_cairo(snapshot, visible, self._draw_bottom_extras)
+            if current:
+                self._snapshot_cairo(snapshot, visible, self._draw_layer_extras)
+            if see_through:
+                snapshot.pop()
 
-        They are recorded first, and the recording played back into a cairo
-        node just the size of what it holds: most of the time that is nothing,
-        or a small box, rather than the whole view.
+        # Textures of layers no longer in the picture; one brought back by an
+        # undo is uploaded again.
+        present = {id(layer) for layer in document.layers}
+        for layer in [layer for layer in self._tiles if id(layer) not in present]:
+            del self._tiles[layer]
+
+    def _push_vacated_mask(self, snapshot: Gtk.Snapshot) -> None:
+        """Start drawing the current layer with the place a moved selection left cut out of it."""
+        paste, zoom = self._paste, self.zoom
+        x, y, width, height = paste.source
+        bounds = _rect(x * zoom, y * zoom, width * zoom, height * zoom)
+        snapshot.push_mask(Gsk.MaskMode.INVERTED_ALPHA)
+        if paste.source_mask is None:
+            snapshot.append_color(Gdk.RGBA(red=0, green=0, blue=0, alpha=1), bounds)
+        else:
+            snapshot.append_scaled_texture(
+                mask_texture(paste.source_mask), Gsk.ScalingFilter.NEAREST, bounds
+            )
+        snapshot.pop()
+
+    def _snapshot_cairo(
+        self, snapshot: Gtk.Snapshot, visible: tuple[float, float, float, float], draw
+    ) -> None:
+        """Draw with cairo, over no more of the screen than what is drawn covers.
+
+        It is recorded first, and the recording played back into a cairo node
+        just the size of what it holds: most of the time that is nothing, or a
+        small box, rather than the whole view.
         """
         recording = cairo.RecordingSurface(cairo.CONTENT_COLOR_ALPHA, None)
         cr = cairo.Context(recording)
         cr.rectangle(*visible)
         cr.clip()
-        self._draw_overlays(cr, accent)
+        # Laid out in image pixels; this one transform is what makes it appear
+        # at the current zoom level on screen.
+        cr.scale(self.zoom, self.zoom)
+        draw(cr)
         x, y, width, height = recording.ink_extents()
         if width <= 0 or height <= 0:
             return
@@ -158,24 +226,65 @@ class RenderMixin:
         cr.set_source_surface(recording, 0, 0)
         cr.paint()
 
-    def _draw_overlays(self, cr: cairo.Context, accent: Gdk.RGBA) -> None:
-        image_width, image_height = self._document.width, self._document.height
+    def _draw_bottom_extras(self, cr: cairo.Context) -> None:
+        """What floats leaves white on the bottom layer: where a paste or text makes
+        the canvas grow, and where a selection moved from it."""
+        document = self._document
+        image_width, image_height = document.width, document.height
+        paste = self._paste
+        if paste is not None:
+            if paste.source is not None and document.current == 0:
+                cr.save()
+                cr.set_source_rgb(1, 1, 1)
+                if paste.source_mask is None:
+                    cr.rectangle(*paste.source)
+                    cr.fill()
+                else:
+                    cr.mask_surface(paste.source_mask, paste.source[0], paste.source[1])
+                cr.restore()
+            self._draw_overhang(
+                cr, paste.x, paste.y, paste.width, paste.height, image_width, image_height
+            )
+        text = self._text
+        if text is not None:
+            width, height = text.size
+            if width > 0 and height > 0:
+                self._draw_overhang(cr, text.x, text.y, width, height, image_width, image_height)
 
-        # Everything below is laid out in image pixels; this one transform is
-        # what makes it appear at the current zoom level on screen.
-        cr.save()
-        cr.scale(self.zoom, self.zoom)
-
+    def _draw_layer_extras(self, cr: cairo.Context) -> None:
+        """What is on its way onto the current layer: a tool's preview, a paste, or text."""
+        document = self._document
         context = self._drag_context
         if context is None and self.active_tool.in_progress:
             context = self._make_context(self._shape_button)
         if context is not None:
             cr.save()
-            cr.rectangle(0, 0, image_width, image_height)
+            cr.rectangle(0, 0, document.width, document.height)
             cr.clip()
             self.active_tool.draw_preview(cr, context)
             cr.restore()
 
+        paste = self._paste
+        if paste is not None:
+            cr.save()
+            cr.rectangle(paste.x, paste.y, paste.width, paste.height)
+            cr.clip()
+            cr.translate(paste.x, paste.y)
+            cr.scale(paste.scale_x, paste.scale_y)
+            cr.set_source_surface(paste.surface, 0, 0)
+            cr.get_source().set_filter(cairo.FILTER_NEAREST)
+            cr.paint()
+            cr.restore()
+
+        text = self._text
+        if text is not None:
+            width, height = text.size
+            if width > 0 and height > 0:
+                text.render(cr)
+
+    def _draw_chrome(self, cr: cairo.Context, accent: Gdk.RGBA) -> None:
+        """The outlines, the caret and the grid, over every layer."""
+        image_width, image_height = self._document.width, self._document.height
         if self.pixel_grid_visible:
             self._draw_pixel_grid(cr, image_width, image_height)
 
@@ -184,10 +293,11 @@ class RenderMixin:
             self._draw_dashed_rect(cr, accent, *frame)
         if self._resize_size is not None:
             self._draw_resize_preview(cr, accent, image_width, image_height)
-        if self._paste is not None:
-            self._draw_paste(cr, accent, image_width, image_height)
+        paste = self._paste
+        if paste is not None:
+            self._draw_dashed_rect(cr, accent, paste.x, paste.y, paste.width, paste.height)
         if self._text is not None:
-            self._draw_text(cr, accent, image_width, image_height)
+            self._draw_text_frame(cr, accent)
         if self._selection is not None:
             if self._selection.outline is not None:
                 cr.save()
@@ -197,7 +307,6 @@ class RenderMixin:
                 cr.restore()
             else:
                 draw_marquee(cr, *self._selection.rect)
-        cr.restore()
 
     def _draw_pixel_grid(self, cr: cairo.Context, image_width: int, image_height: int) -> None:
         """A line between every two pixels, drawn on screen pixels so it stays one pixel thin."""
@@ -279,46 +388,9 @@ class RenderMixin:
 
         self._draw_dashed_rect(cr, accent, 0, 0, width, height)
 
-    def _draw_paste(
-        self, cr: cairo.Context, accent: Gdk.RGBA, image_width: int, image_height: int
-    ) -> None:
-        paste = self._paste
-        if paste.source is not None:
-            # The pixels are on their way out of here; show the white they leave behind.
-            cr.save()
-            cr.set_source_rgb(1, 1, 1)
-            if paste.source_mask is None:
-                cr.rectangle(*paste.source)
-                cr.fill()
-            else:
-                cr.mask_surface(paste.source_mask, paste.source[0], paste.source[1])
-            cr.restore()
-
-        self._draw_overhang(
-            cr, paste.x, paste.y, paste.width, paste.height, image_width, image_height
-        )
-
-        cr.save()
-        cr.rectangle(paste.x, paste.y, paste.width, paste.height)
-        cr.clip()
-        cr.translate(paste.x, paste.y)
-        cr.scale(paste.scale_x, paste.scale_y)
-        cr.set_source_surface(paste.surface, 0, 0)
-        cr.get_source().set_filter(cairo.FILTER_NEAREST)
-        cr.paint()
-        cr.restore()
-
-        self._draw_dashed_rect(cr, accent, paste.x, paste.y, paste.width, paste.height)
-
-    def _draw_text(
-        self, cr: cairo.Context, accent: Gdk.RGBA, image_width: int, image_height: int
-    ) -> None:
+    def _draw_text_frame(self, cr: cairo.Context, accent: Gdk.RGBA) -> None:
         text = self._text
         width, height = text.size
-        if width > 0 and height > 0:
-            self._draw_overhang(cr, text.x, text.y, width, height, image_width, image_height)
-            text.render(cr)
-
         # The outline sits outside the glyphs, and outside what gets rasterised.
         self._draw_dashed_rect(
             cr,
@@ -328,7 +400,6 @@ class RenderMixin:
             width + 2 * TEXT_PADDING,
             height + 2 * TEXT_PADDING,
         )
-
         if self._caret_visible:
             caret_x, caret_y, caret_height = text.caret_rect()
             cr.set_source_rgba(

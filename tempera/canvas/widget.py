@@ -168,18 +168,22 @@ class Canvas(
     def document(self, value: Document) -> None:
         if self._document is not None and self._document_handler:
             self._document.disconnect(self._document_handler)
+            self._document.disconnect(self._layers_handler)
         # A selection or a paste belongs to the image it was made on, and
         # would land outside a smaller one.
         self.cancel_floating()
         self.set_selection(None)
         self._document = value
         self._document_handler = value.connect("content-changed", self._on_content_changed)
-        self._tiles.invalidate()
+        self._invalidate(None)
+        # The layers can come and go, or show differently, without a change to
+        # any of their pixels.
+        self._layers_handler = value.connect("layers-changed", lambda *_args: self.queue_draw())
         self._sync_content_size()
         self.queue_draw()
 
     def _on_content_changed(self, *_args) -> None:
-        self._tiles.invalidate(self._document.damage)
+        self._invalidate(self._document.damage)
         # Undo/redo and resizing can swap in a differently sized surface.
         if self._selection is not None:
             document = self._document
@@ -224,6 +228,11 @@ class Canvas(
     def is_dragging(self) -> bool:
         """Whether a stroke, move or resize is under way: a button is held, or a fill still at work."""
         return self._drag_origin is not None or self._working
+
+    def select_layer(self, index: int) -> None:
+        """Paint on another layer from now on, first landing what floats on the one it was placed on."""
+        self.commit_floating()
+        self._document.select_layer(index)
 
     def select_tool(self, tool_id: str) -> None:
         self.finish_shape()

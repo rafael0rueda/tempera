@@ -195,6 +195,7 @@ class PointerMixin:
             select_region=self.select_region,
             select_outline=self.select_outline,
             damage=self._damage,
+            picture=self._document.flattened,
         )
 
     def _on_drag_begin(self, gesture, start_x, start_y):

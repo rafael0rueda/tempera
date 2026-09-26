@@ -150,9 +150,12 @@ class FilesMixin:
         self.canvas.commit_floating()
         document = self.canvas.document
 
+        # The picture as it shows, every visible layer blended.
+        picture = document.flattened()
+
         def on_print(size: str, orientation) -> None:
             save_settings({"print-size": size})
-            job = printing.PrintJob(document.surface, document.title, size, orientation)
+            job = printing.PrintJob(picture, document.title, size, orientation)
 
             def on_error(message: str) -> None:
                 self.show_toast(_("Could not print: {message}").format(message=message))
@@ -160,7 +163,7 @@ class FilesMixin:
             printing.print_image(self, job, on_error)
 
         printing.PrintDialog(
-            document.surface, load_setting("print-size", printing.DEFAULT_SIZE), on_print
+            picture, load_setting("print-size", printing.DEFAULT_SIZE), on_print
         ).present(self)
 
     def _save_as(self, then=None) -> None:

@@ -40,7 +40,7 @@ class SessionMixin:
         elif self._kept_changes != self._changes:
             self._kept_changes = self._changes
             self._recovery.save(
-                document.surface,
+                document,
                 {
                     "title": document.title,
                     "file": document.file.get_uri() if document.file is not None else None,

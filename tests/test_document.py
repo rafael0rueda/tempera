@@ -533,12 +533,12 @@ def paint_square(document, x, y, size):
     cr.fill()
 
 
-def test_a_change_says_which_part_of_the_image_it_touched():
+def test_a_change_says_which_part_of_which_layer_it_touched():
     document = Document(new_surface(40, 40))
     document.begin_change()
     paint_square(document, 5, 6, 3)
     document.finish_change()
-    assert document.damage == (5, 6, 3, 3)
+    assert document.damage == [(document.layer, (5, 6, 3, 3))]
 
 
 def test_undo_and_redo_say_which_part_they_put_back():
@@ -548,25 +548,28 @@ def test_undo_and_redo_say_which_part_they_put_back():
     document.finish_change()
     document.damage = None
     document.undo()
-    assert document.damage == (5, 6, 3, 3)
+    assert document.damage == [(document.layer, (5, 6, 3, 3))]
     document.damage = None
     document.redo()
-    assert document.damage == (5, 6, 3, 3)
+    assert document.damage == [(document.layer, (5, 6, 3, 3))]
 
 
-def test_a_new_surface_may_have_changed_anywhere():
+def test_a_change_to_every_layer_may_have_changed_anything():
     document = Document(new_surface(40, 40))
-    document.begin_change()
-    paint_square(document, 5, 6, 3)
-    document.finish_change()
     document.resize(50, 50)
     assert document.damage is None
+
+
+def test_undoing_a_change_to_the_layers_changes_no_pixels_in_place():
+    # It puts back other surfaces, which the canvas notices by themselves.
+    document = Document(new_surface(40, 40))
+    document.resize(50, 50)
     document.undo()
-    assert document.damage is None
+    assert document.damage == []
 
 
 def test_a_change_that_altered_nothing_touched_nothing():
     document = Document(new_surface(40, 40))
     document.begin_change()
     document.commit_change()
-    assert document.damage == (0, 0, 0, 0)
+    assert document.damage == []

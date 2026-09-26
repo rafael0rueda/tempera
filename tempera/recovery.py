@@ -4,8 +4,9 @@
 """Copies of unsaved work, kept so that a crash does not lose it.
 
 Each window with unsaved changes keeps one slot in Tempera's data folder: the
-image as a PNG, a small JSON file describing it, and a lock file the window
-holds for as long as it is open. Saving, discarding the changes or closing the
+image with its layers as an OpenRaster file, a small JSON file describing it,
+and a lock file the window holds for as long as it is open. (Tempera 1 kept a
+flattened PNG instead, which is still brought back.) Saving, discarding the changes or closing the
 window normally deletes the slot. A slot whose lock nobody holds was left by a
 Tempera that stopped without closing, and is offered back the next time.
 
@@ -28,11 +29,14 @@ from pathlib import Path
 import cairo
 from gi.repository import GLib
 
-from .document import copy_surface
+from .document import Document, Layer, copy_surface
+from .openraster import read_openraster, write_openraster
 
 # How often a window with unsaved changes keeps a fresh copy, in seconds.
 INTERVAL = 30
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
+# What a slot's image can be: layers since Tempera 2, a flat picture before.
+IMAGE_SUFFIXES = (".ora", ".png")
 
 
 def recovery_dir() -> Path:
@@ -54,8 +58,9 @@ def _write_private(path: Path, write) -> None:
 
 
 def _remove(directory: Path, slot_id: str, keep_lock: bool = False) -> None:
-    for suffix in (".png", ".json", ".png.tmp", ".json.tmp"):
+    for suffix in (*IMAGE_SUFFIXES, ".json"):
         (directory / (slot_id + suffix)).unlink(missing_ok=True)
+        (directory / (slot_id + suffix + ".tmp")).unlink(missing_ok=True)
     if not keep_lock:
         (directory / (slot_id + ".lock")).unlink(missing_ok=True)
 
@@ -86,11 +91,11 @@ class RecoverySlot:
         self._generation = 0
         self._writing = False
         # The newest copy asked for while another was being written.
-        self._waiting: tuple[cairo.ImageSurface, dict] | None = None
+        self._waiting: tuple[list[Layer], dict] | None = None
 
     @property
-    def png_path(self) -> Path:
-        return self.directory / (self.id + ".png")
+    def image_path(self) -> Path:
+        return self.directory / (self.id + ".ora")
 
     @property
     def json_path(self) -> Path:
@@ -105,12 +110,24 @@ class RecoverySlot:
             self._lock = _try_lock(self.directory / (self.id + ".lock"))
         return self._lock is not None
 
-    def save(self, surface: cairo.ImageSurface, info: dict, done=None) -> None:
+    def save(self, document: Document, info: dict, done=None) -> None:
         """Keep a copy of the image as it is now; the writing happens in the background."""
         if not self._claim():
             return
         # Copied here, so drawing on can carry on while the copy is written.
-        request = (copy_surface(surface), dict(info, version=FORMAT_VERSION, time=time.time()))
+        layers = [
+            Layer(copy_surface(layer.surface), layer.name, layer.visible, layer.opacity)
+            for layer in document.layers
+        ]
+        info = dict(
+            info,
+            version=FORMAT_VERSION,
+            time=time.time(),
+            width=document.width,
+            height=document.height,
+            current=document.current,
+        )
+        request = (layers, info)
         if self._writing:
             self._waiting = request
             return
@@ -119,12 +136,17 @@ class RecoverySlot:
     def _start(self, request, done) -> None:
         self._writing = True
         generation = self._generation
-        surface, info = request
+        layers, info = request
 
         def write() -> None:
             try:
-                # The PNG first: a description on disk means its image is complete.
-                _write_private(self.png_path, surface.write_to_png)
+                # The image first: a description on disk means its image is complete.
+                _write_private(
+                    self.image_path,
+                    lambda stream: write_openraster(
+                        stream, layers, info["width"], info["height"], complete=False
+                    ),
+                )
                 _write_private(
                     self.json_path, lambda stream: stream.write(json.dumps(info).encode())
                 )
@@ -174,8 +196,13 @@ class Leftover:
     lock: object
 
     @property
-    def png_path(self) -> Path:
-        return self.directory / (self.id + ".png")
+    def image_path(self) -> Path:
+        """The layers, or the flat picture a Tempera before 2 left."""
+        for suffix in IMAGE_SUFFIXES:
+            path = self.directory / (self.id + suffix)
+            if path.exists():
+                return path
+        return self.directory / (self.id + IMAGE_SUFFIXES[0])
 
     @property
     def title(self) -> str:
@@ -191,8 +218,18 @@ class Leftover:
         value = self.info.get("time")
         return float(value) if isinstance(value, (int, float)) else 0.0
 
-    def load(self) -> cairo.ImageSurface:
-        return cairo.ImageSurface.create_from_png(str(self.png_path))
+    def load(self) -> Document:
+        """The image as it was kept. Raises OpenRasterError, cairo.Error or OSError when it cannot be read."""
+        path = self.image_path
+        if path.suffix == ".png":
+            return Document(cairo.ImageSurface.create_from_png(str(path)))
+        with open(path, "rb") as stream:
+            _width, _height, layers = read_openraster(stream)
+        document = Document(layers=layers)
+        current = self.info.get("current")
+        if isinstance(current, int) and 0 <= current < len(layers):
+            document.current = current
+        return document
 
     def discard(self) -> None:
         _remove(self.directory, self.id)
@@ -222,7 +259,9 @@ def find_leftovers(directory: Path | None = None) -> list[Leftover]:
             continue  # a window that is still open
         try:
             info = json.loads(description.read_text(encoding="utf-8"))
-            if not isinstance(info, dict) or not (directory / (slot_id + ".png")).is_file():
+            if not isinstance(info, dict) or not any(
+                (directory / (slot_id + suffix)).is_file() for suffix in IMAGE_SUFFIXES
+            ):
                 raise ValueError("incomplete")
         except (OSError, ValueError):
             # Nothing that can be brought back.
@@ -231,16 +270,17 @@ def find_leftovers(directory: Path | None = None) -> list[Leftover]:
             continue
         leftovers.append(Leftover(slot_id, directory, info, lock))
     # Stray images a crash left before their description was written.
-    for image in directory.glob("*.png"):
-        if not (directory / (image.stem + ".json")).exists():
-            lock = _try_lock(directory / (image.stem + ".lock"))
-            if lock is not None:
-                lock.close()
-                _remove(directory, image.stem)
+    for suffix in IMAGE_SUFFIXES:
+        for image in directory.glob("*" + suffix):
+            if not (directory / (image.stem + ".json")).exists():
+                lock = _try_lock(directory / (image.stem + ".lock"))
+                if lock is not None:
+                    lock.close()
+                    _remove(directory, image.stem)
     # Locks of windows that never kept a copy before the crash.
     for lock_path in directory.glob("*.lock"):
         stem = lock_path.stem
-        if any((directory / (stem + suffix)).exists() for suffix in (".json", ".png")):
+        if any((directory / (stem + suffix)).exists() for suffix in (".json", *IMAGE_SUFFIXES)):
             continue
         lock = _try_lock(lock_path)
         if lock is not None:

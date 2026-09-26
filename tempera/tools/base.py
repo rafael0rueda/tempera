@@ -47,6 +47,9 @@ class ToolContext:
     # what it painted, (x1, y1, x2, y2), so the canvas redraws just that. The
     # whole change is redrawn anyway once the drag lands.
     damage: Callable[[float, float, float, float], None] = _ignore_damage
+    # One rectangle of the picture as it shows, every visible layer blended,
+    # as (x, y, width, height). Without it, the current layer stands in.
+    picture: Callable[[int, int, int, int], cairo.ImageSurface] | None = None
 
     @property
     def color(self) -> Gdk.RGBA:

@@ -13,6 +13,7 @@ python.install_sources(
     'i18n.py',
     'interface_size.py',
     'main.py',
+    'openraster.py',
     'preferences.py',
     'printing.py',
     'recent_files.py',

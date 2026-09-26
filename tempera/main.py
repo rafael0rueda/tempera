@@ -18,8 +18,8 @@ gi.require_version("GdkPixbuf", "2.0")
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 
 from . import APP_ID, APP_NAME, VERSION, interface_size, recovery  # noqa: E402
-from .document import Document  # noqa: E402
 from .file_io import load_document  # noqa: E402
+from .openraster import OpenRasterError  # noqa: E402
 from .i18n import _
 from .recent_files import remember_recent  # noqa: E402
 from .settings import load_setting, migrate_old_config  # noqa: E402
@@ -162,8 +162,8 @@ class TemperaApplication(Adw.Application):
     def _recover(self, window: TemperaWindow, leftover: recovery.Leftover) -> TemperaWindow:
         """Open a recovered image, as unsaved changes to the file it came from."""
         try:
-            surface = leftover.load()
-        except (cairo.Error, MemoryError, OSError) as error:
+            document = leftover.load()
+        except (cairo.Error, MemoryError, OSError, OpenRasterError) as error:
             # Kept for next time rather than lost.
             leftover.release()
             window.show_toast(
@@ -172,7 +172,6 @@ class TemperaApplication(Adw.Application):
                 )
             )
             return window
-        document = Document(surface)
         if leftover.uri is not None:
             document.file = Gio.File.new_for_uri(leftover.uri)
         document.modified = True

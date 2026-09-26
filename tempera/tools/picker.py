@@ -15,15 +15,17 @@ class PickerTool(Tool):
     mutates = False
 
     def press(self, ctx: ToolContext, x, y):
-        surface = ctx.surface
         px, py = int(x), int(y)
-        if not (0 <= px < surface.get_width() and 0 <= py < surface.get_height()):
+        if not (0 <= px < ctx.surface.get_width() and 0 <= py < ctx.surface.get_height()):
             return
 
+        # The colour as it shows, whichever layer it is on.
+        if ctx.picture is not None:
+            surface, offset = ctx.picture(px, py, 1, 1), 0
+        else:
+            surface, offset = ctx.surface, py * ctx.surface.get_stride() + px * 4
         surface.flush()
-        data = surface.get_data()
-        offset = py * surface.get_stride() + px * 4
-        blue, green, red, alpha = data[offset:offset + 4]
+        blue, green, red, alpha = surface.get_data()[offset:offset + 4]
 
         color = Gdk.RGBA()
         if alpha == 0:

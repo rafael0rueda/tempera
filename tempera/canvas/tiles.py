@@ -36,6 +36,18 @@ def surface_texture(surface: cairo.ImageSurface, x: int, y: int, width: int, hei
     return Gdk.MemoryTexture.new(width, height, SURFACE_FORMAT, GLib.Bytes.new(pixels), width * 4)
 
 
+def mask_texture(mask: cairo.ImageSurface) -> Gdk.Texture:
+    """A texture of a cairo A8 mask, for GTK to cut with."""
+    mask.flush()
+    return Gdk.MemoryTexture.new(
+        mask.get_width(),
+        mask.get_height(),
+        Gdk.MemoryFormat.A8,
+        GLib.Bytes.new(bytes(mask.get_data())),
+        mask.get_stride(),
+    )
+
+
 class ImageTiles:
     """Textures for the parts of an image in view, rebuilt only where it changed."""
 

@@ -33,9 +33,11 @@ def wait_for(condition, seconds: float = 5.0) -> bool:
         GLib.source_remove(tick)
 
 
-def save_and_wait(slot, surface, info=None):
+def save_and_wait(slot, image, info=None):
+    """Keep a copy of a document, or of a picture as a document of one layer."""
+    document = image if isinstance(image, Document) else Document(image)
     written = []
-    slot.save(surface, info or {"title": "Test.png", "file": None}, lambda: written.append(True))
+    slot.save(document, info or {"title": "Test.png", "file": None}, lambda: written.append(True))
     assert wait_for(lambda: written)
 
 
@@ -57,9 +59,9 @@ def test_a_copy_is_kept_privately(private_recovery_dir):
     surface = new_surface(3, 3, RED)
     save_and_wait(slot, surface)
 
-    assert slot.png_path.is_file() and slot.json_path.is_file()
+    assert slot.image_path.is_file() and slot.json_path.is_file()
     assert stat.S_IMODE(private_recovery_dir.stat().st_mode) == 0o700
-    for path in (slot.png_path, slot.json_path, private_recovery_dir / (slot.id + ".lock")):
+    for path in (slot.image_path, slot.json_path, private_recovery_dir / (slot.id + ".lock")):
         assert stat.S_IMODE(path.stat().st_mode) == 0o600
     info = json.loads(slot.json_path.read_text())
     assert info["title"] == "Test.png" and info["version"] == recovery.FORMAT_VERSION
@@ -92,16 +94,16 @@ def test_clearing_and_closing_leave_nothing_behind(private_recovery_dir):
 def test_a_copy_cleared_while_being_written_is_removed_when_the_write_ends(private_recovery_dir):
     slot = recovery.RecoverySlot()
     written = []
-    slot.save(new_surface(200, 200, RED), {"title": "T"}, lambda: written.append(True))
+    slot.save(Document(new_surface(200, 200, RED)), {"title": "T"}, lambda: written.append(True))
     slot.clear()
     assert wait_for(lambda: written)
-    assert not slot.png_path.exists() and not slot.json_path.exists()
+    assert not slot.image_path.exists() and not slot.json_path.exists()
     slot.close()
 
 
 def test_a_window_closed_while_writing_leaves_nothing(private_recovery_dir):
     slot = recovery.RecoverySlot()
-    slot.save(new_surface(200, 200, RED), {"title": "T"})
+    slot.save(Document(new_surface(200, 200, RED)), {"title": "T"})
     slot.close()
     assert wait_for(lambda: files(private_recovery_dir) == [])
 
@@ -121,10 +123,52 @@ def test_a_crashed_window_s_copy_comes_back(private_recovery_dir):
     assert leftover.uri == "file:///tmp/cat.png"
     assert leftover.saved_at > 0
     loaded = leftover.load()
-    assert pixel_at(loaded, 1, 2) == (255, 0, 0, 255)
+    assert pixel_at(loaded.surface, 1, 2) == (255, 0, 0, 255)
 
     # Held while it is being offered, so another Tempera does not offer it too.
     assert recovery.find_leftovers() == []
+    leftover.discard()
+    assert files(private_recovery_dir) == []
+
+
+def test_the_layers_come_back_as_they_were(private_recovery_dir):
+    document = Document(new_surface(4, 4, WHITE))
+    document.add_layer()
+    paint_pixel(document.surface, 1, 1, RED)
+    document.rename_layer(1, "Ink")
+    document.set_layer_opacity(1, 0.5)
+    document.add_layer()
+    document.set_layer_visible(2, False)
+    document.select_layer(1)
+    slot = recovery.RecoverySlot()
+    save_and_wait(slot, document)
+    crash(slot)
+
+    [leftover] = recovery.find_leftovers()
+    loaded = leftover.load()
+    assert [layer.name for layer in loaded.layers] == ["Background", "Ink", "Layer 3"]
+    assert [layer.visible for layer in loaded.layers] == [True, True, False]
+    assert loaded.layers[1].opacity == 0.5
+    assert loaded.current == 1
+    assert pixel_at(loaded.layers[1].surface, 1, 1) == (255, 0, 0, 255)
+    assert pixel_at(loaded.layers[1].surface, 2, 2)[3] == 0
+    leftover.discard()
+
+
+def test_a_copy_tempera_1_left_comes_back_too(private_recovery_dir):
+    # A picture as a PNG, before there were layers.
+    private_recovery_dir.mkdir(parents=True)
+    surface = new_surface(3, 3, WHITE)
+    paint_pixel(surface, 1, 1, RED)
+    surface.write_to_png(str(private_recovery_dir / "old.png"))
+    (private_recovery_dir / "old.json").write_text(
+        json.dumps({"title": "old.png", "file": None, "version": 1, "time": 1.0})
+    )
+
+    [leftover] = recovery.find_leftovers()
+    loaded = leftover.load()
+    assert len(loaded.layers) == 1
+    assert pixel_at(loaded.surface, 1, 1) == (255, 0, 0, 255)
     leftover.discard()
     assert files(private_recovery_dir) == []
 
@@ -156,6 +200,7 @@ def test_broken_or_half_written_leftovers_are_cleaned_up(private_recovery_dir):
     (private_recovery_dir / "broken.png").write_bytes(b"")
     (private_recovery_dir / "noimage.json").write_text("{}")
     (private_recovery_dir / "nodescription.png").write_bytes(b"")
+    (private_recovery_dir / "nodescription2.ora").write_bytes(b"")
     (private_recovery_dir / "onlylock.lock").write_bytes(b"")
     assert recovery.find_leftovers() == []
     assert files(private_recovery_dir) == []
@@ -270,7 +315,7 @@ def test_recovering_into_a_blank_window_reopens_the_file_as_unsaved(application,
     assert document.file.get_uri() == "file:///tmp/cat.png"
     assert pixel_at(document.surface, 2, 2) == (255, 0, 0, 255)
     # The old copy is gone, and the window keeps one of its own at once.
-    assert not leftover.png_path.exists()
+    assert not leftover.image_path.exists()
     assert wait_for(lambda: kept(window))
 
 
@@ -288,13 +333,13 @@ def test_a_window_already_in_use_is_left_alone(application, window):
 
 def test_a_copy_that_cannot_be_read_is_kept_for_later(application, window):
     leftover = leftover_of(new_surface(2, 2, RED), {"title": "x"})
-    leftover.png_path.write_bytes(b"not a png")
+    leftover.image_path.write_bytes(b"not a png")
     toasts = []
     window.show_toast = toasts.append
 
     assert application._recover(window, leftover) is window
     assert toasts and "x" in toasts[0]
-    assert leftover.png_path.exists()
+    assert leftover.image_path.exists()
     assert len(recovery.find_leftovers()) == 1
 
 
