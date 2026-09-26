@@ -62,6 +62,7 @@ class HeaderMixin:
         view_section = Gio.Menu()
         view_section.append_item(_custom_menu_item("zoom"))
         view_section.append(_("Show Pixel Grid"), "win.pixel-grid")
+        view_section.append(_("Show Layers"), "win.layers-panel")
         palette_menu = Gio.Menu()
         palette_menu.append(_("Left"), "win.palette-position::left")
         palette_menu.append(_("Right"), "win.palette-position::right")
@@ -93,7 +94,11 @@ class HeaderMixin:
         # UI thread so that a large file does not freeze the window.
         self._busy_spinner = Adw.Spinner(visible=False, tooltip_text=_("Working…"))
 
+        layers = Gtk.ToggleButton(icon_name="tempera-layers-symbolic", action_name="win.layers-panel")
+        self._add_shortcut_tooltip(layers, "Show Layers", "win.layers-panel")
+
         header.pack_end(menu_button)
+        header.pack_end(layers)
         header.pack_end(history)
         header.pack_end(self._busy_spinner)
         return header

@@ -11,6 +11,7 @@ from .. import printing
 from ..document import Document
 from ..i18n import _
 from ..file_io import (
+    LAYERED_FORMAT,
     format_for,
     image_filters,
     load_document_async,
@@ -172,17 +173,15 @@ class FilesMixin:
         self.canvas.commit_floating()
         document = self.canvas.document
         dialog = Gtk.FileDialog(title=_("Save Image"), filters=image_filters())
-        if document.file is None:
-            dialog.set_initial_name("Untitled.png")
-        else:
-            dialog.set_initial_name(save_as_name(document.file))
+        layered = len(document.layers) > 1
+        dialog.set_initial_name(save_as_name(document.file, layered))
 
         def on_done(source, result):
             try:
                 chosen = source.save_finish(result)
             except GLib.Error:
                 return
-            file = with_default_extension(chosen)
+            file = with_default_extension(chosen, layered)
             if not file.equal(chosen) and file.query_exists(None):
                 # The dialog only asked about replacing the name as typed.
                 self._confirm_replace(file, lambda: self._write(file, then))
@@ -243,10 +242,25 @@ class FilesMixin:
 
     def _write_now(self, file: Gio.File, then, quality: int | None) -> None:
         self._set_busy(True)
+        document = self.canvas.document
+        merged = len(document.layers) > 1 and format_for(file) != LAYERED_FORMAT
 
         def on_saved() -> None:
             self._set_busy(False)
-            self.show_toast(_("Saved {name}").format(name=file.get_basename()))
+            if merged and self._told_of_merging is not document:
+                # Once for each picture: the layers are still there to work
+                # on, but the file has them merged into one.
+                self._told_of_merging = document
+                self.toasts.add_toast(
+                    Adw.Toast(
+                        title=_("Saved {name} with its layers merged").format(name=file.get_basename()),
+                        use_markup=False,
+                        button_label=_("Keep Layers…"),
+                        action_name="win.save-as",
+                    )
+                )
+            else:
+                self.show_toast(_("Saved {name}").format(name=file.get_basename()))
             self._remember_recent(file)
             if then is not None:
                 then()

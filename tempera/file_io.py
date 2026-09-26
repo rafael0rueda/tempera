@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import io
 import os
 from typing import Callable
 
@@ -10,8 +11,9 @@ import cairo
 from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Gtk
 
 from .background import run_in_background
-from .document import MAX_SIZE, Document, new_surface, surface_from_pixbuf
+from .document import MAX_SIZE, Document, Layer, copy_surface, flatten, new_surface, surface_from_pixbuf
 from .i18n import _
+from .openraster import OpenRasterError, read_openraster, write_openraster
 
 EXTENSION_FORMATS = {
     ".png": "png",
@@ -22,7 +24,10 @@ EXTENSION_FORMATS = {
     ".tif": "tiff",
     ".webp": "webp",
     ".ico": "ico",
+    ".ora": "ora",
 }
+# The one format that keeps the layers; the rest get the picture as it shows.
+LAYERED_FORMAT = "ora"
 FLATTEN_FORMATS = {"jpeg", "bmp"}
 # Readable image types, for the Open dialog and the desktop file. GIF and ICO
 # open like the rest; GIF just cannot be written back.
@@ -34,10 +39,12 @@ OPEN_MIME_TYPES = (
     "image/webp",
     "image/gif",
     "image/vnd.microsoft.icon",
+    "image/openraster",
 )
 # The ICO format stores its size in a byte, where 0 means 256.
 ICO_MAX_SIZE = 256
 DEFAULT_EXTENSION = ".png"
+LAYERED_EXTENSION = ".ora"
 LOAD_CHUNK = 64 * 1024
 # No image that fits on a canvas is anywhere near this big; an uncompressed
 # 8192 × 8192 TIFF, the worst case Tempera can hold, is about 256 MB.
@@ -55,6 +62,10 @@ def image_filters() -> Gio.ListStore:
     png = Gtk.FileFilter(name=_("PNG image"))
     png.add_mime_type("image/png")
     store.append(png)
+
+    ora = Gtk.FileFilter(name=_("OpenRaster image, with layers"))
+    ora.add_mime_type("image/openraster")
+    store.append(ora)
 
     every = Gtk.FileFilter(name=_("All files"))
     every.add_pattern("*")
@@ -111,14 +122,59 @@ def check_readable(file: Gio.File) -> None:
         )
 
 
+def is_openraster(file: Gio.File) -> bool:
+    """Whether a file holds layers as OpenRaster: by its first bytes, which say so,
+    or else by its name."""
+    if os.path.splitext(file.get_basename())[1].lower() == ".ora":
+        return True
+    stream = file.read(None)
+    try:
+        start = stream.read_bytes(64, None).get_data()
+    finally:
+        stream.close(None)
+    # A zip whose first member, stored as it is, is named "mimetype" and says so.
+    return start[:4] == b"PK\x03\x04" and start[30:54] == b"mimetypeimage/openraster"
+
+
+def _read_layers(file: Gio.File) -> list[Layer]:
+    try:
+        with open(file.get_path(), "rb") as stream:
+            _width, _height, layers = read_openraster(stream)
+    except OpenRasterError as error:
+        raise image_error(str(error)) from None
+    except OSError as error:
+        raise image_error(error.strerror or str(error)) from None
+    return layers
+
+
+def load_layers(file: Gio.File) -> list[Layer]:
+    """The layers of an image file, bottom first: its own if it keeps them, or one
+    of the picture. Raises GLib.Error when it cannot be read."""
+    check_readable(file)
+    if is_openraster(file):
+        return _read_layers(file)
+    return [Layer(_decode(file), _("Background"))]
+
+
 def load_surface(file: Gio.File) -> cairo.ImageSurface:
     """Decode an image file into a surface, raising GLib.Error when it cannot be.
+
+    A file with layers comes as the picture it shows.
+    """
+    check_readable(file)
+    if is_openraster(file):
+        layers = _read_layers(file)
+        surface = layers[0].surface
+        return flatten(layers, 0, 0, surface.get_width(), surface.get_height())
+    return _decode(file)
+
+
+def _decode(file: Gio.File) -> cairo.ImageSurface:
+    """Decode a flat image file, one GdkPixbuf can read.
 
     A small file can declare enormous dimensions, so the size is checked as soon
     as the loader has read the header rather than after decoding gigabytes.
     """
-    check_readable(file)
-
     declared = (0, 0)
     read_bytes = 0
 
@@ -162,25 +218,39 @@ def load_surface(file: Gio.File) -> cairo.ImageSurface:
 
 
 def load_document(file: Gio.File) -> Document:
-    document = Document(load_surface(file))
+    document = Document(layers=load_layers(file))
     document.file = file
     return document
 
 
-def with_default_extension(file: Gio.File) -> Gio.File:
+def default_extension(layered: bool) -> str:
+    """What a name gets when it needs one: OpenRaster for a picture with layers to keep."""
+    return LAYERED_EXTENSION if layered else DEFAULT_EXTENSION
+
+
+def with_default_extension(file: Gio.File, layered: bool = False) -> Gio.File:
     """The file to save to, with .png added unless the name ends in a format Tempera writes.
 
     Otherwise a name without an extension, or with one such as .gif, would get
-    PNG data under a name that says something else.
+    PNG data under a name that says something else. A picture with layers gets
+    .ora instead, which keeps them.
     """
     if format_for(file) is not None:
         return file
-    return file.get_parent().get_child(file.get_basename() + DEFAULT_EXTENSION)
+    return file.get_parent().get_child(file.get_basename() + default_extension(layered))
 
 
-def save_as_name(file: Gio.File) -> str:
-    """The name Save As suggests for a file: its own, or as PNG if its format cannot be written."""
+def save_as_name(file: Gio.File | None, layered: bool = False) -> str:
+    """The name Save As suggests for a file: its own, or as PNG if its format cannot be written.
+
+    For a picture with layers, the name is kept but made OpenRaster, so the
+    layers are kept too unless the user picks otherwise.
+    """
+    if file is None:
+        return _("Untitled") + default_extension(layered)
     name = file.get_basename()
+    if layered:
+        return os.path.splitext(name)[0] + LAYERED_EXTENSION
     if format_for(file) is not None:
         return name
     return os.path.splitext(name)[0] + DEFAULT_EXTENSION
@@ -193,8 +263,11 @@ def format_for(file: Gio.File) -> str | None:
     return EXTENSION_FORMATS.get(extension)
 
 
-def image_to_save(document: Document, file: Gio.File) -> tuple[GdkPixbuf.Pixbuf, str]:
-    """The pixels to write and the format to write them in, or raise if it cannot be done.
+def image_to_save(document: Document, file: Gio.File) -> tuple[object, str]:
+    """What to write and the format to write it in, or raise if it cannot be done.
+
+    For OpenRaster that is copies of the layers; for the other formats, the
+    picture as it shows, as a pixbuf.
 
     Taken on the main thread, before the encoding goes off to a worker: it is a
     copy, so painting on while the file is written cannot change what is saved.
@@ -212,6 +285,12 @@ def image_to_save(document: Document, file: Gio.File) -> tuple[GdkPixbuf.Pixbuf,
             _("ICO images can be at most {size} × {size} px").format(size=ICO_MAX_SIZE)
         )
 
+    if image_format == LAYERED_FORMAT:
+        layers = [
+            Layer(copy_surface(layer.surface), layer.name, layer.visible, layer.opacity)
+            for layer in document.layers
+        ]
+        return (layers, document.width, document.height), image_format
     if image_format in FLATTEN_FORMATS:
         # These formats have no alpha channel, so composite onto white first.
         flattened = new_surface(document.width, document.height)
@@ -234,8 +313,13 @@ def image_to_save(document: Document, file: Gio.File) -> tuple[GdkPixbuf.Pixbuf,
     return pixbuf, image_format
 
 
-def encode_image(pixbuf: GdkPixbuf.Pixbuf, image_format: str, quality: int) -> GLib.Bytes:
-    """Encode the image in memory. Slow for a large picture, so worth a worker thread."""
+def encode_image(picture, image_format: str, quality: int) -> GLib.Bytes:
+    """Encode what image_to_save() gave, in memory. Slow for a large picture, so worth a worker thread."""
+    if image_format == LAYERED_FORMAT:
+        stream = io.BytesIO()
+        write_openraster(stream, *picture)
+        return GLib.Bytes.new(stream.getvalue())
+    pixbuf = picture
     options = (["quality"], [str(quality)]) if image_format == "jpeg" else ([], [])
     _ok, data = pixbuf.save_to_bufferv(image_format, *options)
     return GLib.Bytes.new(data)
@@ -243,9 +327,9 @@ def encode_image(pixbuf: GdkPixbuf.Pixbuf, image_format: str, quality: int) -> G
 
 def save_document(document: Document, file: Gio.File, quality: int = 90) -> None:
     """Save now, in this thread. The window uses save_document_async instead."""
-    pixbuf, image_format = image_to_save(document, file)
+    picture, image_format = image_to_save(document, file)
     depth = document.save_point()
-    data = encode_image(pixbuf, image_format, quality)
+    data = encode_image(picture, image_format, quality)
     # Encoded in memory first, then swapped in whole: writing straight to the
     # file would truncate the original before an encoder or a full disk failed.
     file.replace_contents(data.get_data(), None, False, Gio.FileCreateFlags.NONE, None)
@@ -274,12 +358,17 @@ def load_document_async(
     on_document: Callable[[Document], None],
     on_error: Callable[[str], None],
 ) -> None:
-    def on_surface(surface: cairo.ImageSurface) -> None:
-        document = Document(surface)
+    def done(result):
+        if isinstance(result, GLib.Error):
+            on_error(result.message)
+            return
+        # Made here rather than in the worker: a document is only ever touched
+        # on the UI thread.
+        document = Document(layers=result)
         document.file = file
         on_document(document)
 
-    load_surface_async(file, on_surface, on_error)
+    run_in_background(lambda: load_layers(file), done)
 
 
 def save_document_async(
@@ -291,7 +380,7 @@ def save_document_async(
 ) -> None:
     """Encode in the background and write asynchronously, marking what was written as saved."""
     try:
-        pixbuf, image_format = image_to_save(document, file)
+        picture, image_format = image_to_save(document, file)
     except GLib.Error as error:
         on_error(error.message)
         return
@@ -315,4 +404,4 @@ def save_document_async(
             result, None, False, Gio.FileCreateFlags.NONE, None, on_written
         )
 
-    run_in_background(lambda: encode_image(pixbuf, image_format, quality), done)
+    run_in_background(lambda: encode_image(picture, image_format, quality), done)

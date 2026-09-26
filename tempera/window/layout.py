@@ -14,6 +14,7 @@ from ..i18n import _
 from ..settings import PALETTE_POSITIONS, save_palette_position
 from ..tool_icon import ToolIcon
 from ..tools import TOOL_CLASSES
+from .layers_panel import LayersPanel
 
 # Sizes of the panels and bars, given for the default interface size and
 # scaled with it. The sidebar is fixed, so switching tools never moves the
@@ -23,6 +24,7 @@ OPTIONS_BAR_HEIGHT = 44
 STATUS_BAR_HEIGHT = 32
 PALETTE_BAR_HEIGHT = 56
 PALETTE_COLUMN_WIDTH = 72
+LAYERS_PANEL_WIDTH = 232
 OPTION_SCALE_WIDTH = 120
 
 
@@ -57,6 +59,13 @@ class LayoutMixin:
         content.append(self._canvas_area)
 
         content.append(self._build_palette_column())
+
+        # The layers, at the far right, shown or hidden from the header.
+        self._layers_panel = LayersPanel(self.canvas, self._add_shortcut_tooltip)
+        self._layers_strip = Gtk.Box(visible=False)
+        self._layers_strip.append(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL))
+        self._layers_strip.append(self._layers_panel)
+        content.append(self._layers_strip)
         return content
 
     def _build_palette_column(self) -> Gtk.Widget:
@@ -223,6 +232,8 @@ class LayoutMixin:
         scaled = interface_size.scaled
         self._sidebar.set_size_request(scaled(SIDEBAR_WIDTH), -1)
         self._palette_column.set_size_request(scaled(PALETTE_COLUMN_WIDTH), -1)
+        self._layers_panel.set_size_request(scaled(LAYERS_PANEL_WIDTH), -1)
+        self._layers_panel.sync_interface_size()
         self._options_bar.set_size_request(-1, scaled(OPTIONS_BAR_HEIGHT))
         self._palette_bar.set_size_request(-1, scaled(PALETTE_BAR_HEIGHT))
         self._status_bar.set_size_request(-1, scaled(STATUS_BAR_HEIGHT))

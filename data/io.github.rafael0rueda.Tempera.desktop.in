@@ -9,6 +9,6 @@ Icon=io.github.rafael0rueda.Tempera
 Terminal=false
 Type=Application
 Categories=Graphics;2DGraphics;RasterGraphics;GTK;
-MimeType=image/png;image/jpeg;image/bmp;image/tiff;image/webp;image/gif;image/vnd.microsoft.icon;
+MimeType=image/png;image/jpeg;image/bmp;image/tiff;image/webp;image/gif;image/vnd.microsoft.icon;image/openraster;
 Keywords=paint;draw;image;editor;bitmap;sketch;
 StartupNotify=true

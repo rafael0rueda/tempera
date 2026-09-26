@@ -37,6 +37,8 @@ tempera/window/edit.py
 tempera/window/files.py
 tempera/window/header.py
 tempera/window/image_dialogs.py
+tempera/window/layers.py
+tempera/window/layers_panel.py
 tempera/window/layout.py
 tempera/window/options_bar.py
 tempera/window/window.py

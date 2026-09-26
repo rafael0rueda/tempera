@@ -50,6 +50,8 @@ python.install_sources(
     'window/files.py',
     'window/header.py',
     'window/image_dialogs.py',
+    'window/layers.py',
+    'window/layers_panel.py',
     'window/layout.py',
     'window/options_bar.py',
     'window/session.py',

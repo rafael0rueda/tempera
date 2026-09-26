@@ -113,7 +113,7 @@ def test_assigning_a_key_is_saved_and_applied(application):
 
 
 def test_assigning_the_default_key_clears_the_override(application):
-    shortcuts.assign(application, "win.new", "<Control>m")
+    shortcuts.assign(application, "win.new", "<Control>F11")
     shortcuts.assign(application, "win.new", "<Control>n")
     assert not shortcuts.any_customized()
 
@@ -139,7 +139,7 @@ def test_taking_one_of_several_keys_leaves_the_others(application):
 
 
 def test_reset_restores_the_default(application):
-    shortcuts.assign(application, "win.new", "<Control>m")
+    shortcuts.assign(application, "win.new", "<Control>F11")
     shortcuts.reset(application, "win.new")
     assert shortcuts.keys_for("win.new") == ["<Control>n"]
     assert not shortcuts.is_customized("win.new")

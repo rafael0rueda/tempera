@@ -98,6 +98,22 @@ SHORTCUT_GROUPS: list[tuple[str, list[Shortcut]]] = [
             Shortcut("win.zoom-reset", _("Reset Zoom"), ("<Control>0", "<Control>KP_0")),
             Shortcut("win.zoom-fit", _("Zoom to Fit"), ("<Control>9", "<Control>KP_9")),
             Shortcut("win.pixel-grid", _("Show Pixel Grid"), ("<Control>g",)),
+            Shortcut("win.layers-panel", _("Show Layers"), ("<Control>l",)),
+        ],
+    ),
+    (
+        _("Layers"),
+        [
+            Shortcut("win.add-layer", _("New Layer"), ("<Control><Shift>n",)),
+            Shortcut("win.duplicate-layer", _("Duplicate Layer"), ("<Control><Shift>d",)),
+            Shortcut("win.delete-layer", _("Delete Layer"), ()),
+            Shortcut("win.rename-layer", _("Rename Layer"), ("F2",)),
+            Shortcut("win.raise-layer", _("Move Layer Up"), ("<Control>bracketright",)),
+            Shortcut("win.lower-layer", _("Move Layer Down"), ("<Control>bracketleft",)),
+            Shortcut("win.layer-above", _("Select Layer Above"), ("<Alt>bracketright",)),
+            Shortcut("win.layer-below", _("Select Layer Below"), ("<Alt>bracketleft",)),
+            Shortcut("win.merge-layer-down", _("Merge Down"), ("<Control>m",)),
+            Shortcut("win.flatten-image", _("Flatten Image"), ()),
         ],
     ),
     (

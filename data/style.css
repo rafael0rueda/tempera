@@ -10,7 +10,8 @@
    the theme too. */
 .tempera-sidebar,
 .tempera-palette-column,
-.tempera-palette-bar {
+.tempera-palette-bar,
+.tempera-layers-panel {
   background-color: @secondary_sidebar_bg_color;
 }
 
@@ -28,6 +29,49 @@
 
 .tempera-options-bar {
   padding: 0 12px;
+}
+
+/* The layers panel: a heading, the list, then the current layer's opacity
+   and the buttons, like a sidebar in any GNOME app. */
+.tempera-layers-panel .tempera-panel-heading {
+  margin: 12px 14px 4px;
+}
+
+.tempera-layers-panel .navigation-sidebar {
+  background-color: transparent;
+}
+
+.tempera-layer-row {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+/* The eye says whether the layer shows by its icon; checked is its usual state,
+   and needs no background to say so. */
+.tempera-layer-eye:checked {
+  background-color: transparent;
+}
+
+.tempera-layer-eye:checked:hover {
+  background-color: alpha(currentColor, 0.07);
+}
+
+/* The row a dragged layer would take the place of. */
+.tempera-layer-row.tempera-drop-target {
+  box-shadow: inset 0 0 0 2px @accent_color;
+}
+
+.tempera-layer-thumbnail {
+  border-radius: 3px;
+  outline: 1px solid alpha(currentColor, 0.15);
+}
+
+.tempera-layer-opacity {
+  margin: 6px 14px 0;
+}
+
+.tempera-layer-buttons {
+  margin: 4px 8px 8px;
 }
 
 /* The image size under the title. libadwaita's "smaller" size is too small

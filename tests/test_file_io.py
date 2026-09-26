@@ -4,6 +4,7 @@
 import os
 import resource
 import struct
+import time
 import zlib
 from pathlib import Path
 
@@ -18,9 +19,11 @@ from tempera.file_io import (
     format_for,
     image_filters,
     load_document,
+    load_document_async,
     load_surface,
     save_as_name,
     save_document,
+    save_document_async,
     with_default_extension,
 )
 
@@ -98,10 +101,10 @@ def test_save_as_name_suggests_png_for_a_format_it_cannot_write():
 # image_filters
 
 
-def test_image_filters_offers_images_png_and_all_files():
+def test_image_filters_offers_images_png_openraster_and_all_files():
     store = image_filters()
     names = [store.get_item(i).get_name() for i in range(store.get_n_items())]
-    assert names == ["Images", "PNG image", "All files"]
+    assert names == ["Images", "PNG image", "OpenRaster image, with layers", "All files"]
     assert all(isinstance(store.get_item(i), Gtk.FileFilter) for i in range(store.get_n_items()))
 
 
@@ -401,3 +404,94 @@ def test_saving_writes_no_camera_metadata(tmp_path):
     written = saved.read_bytes()
     assert b"Exif" not in written
     assert b"\xff\xe1" not in written[:4096]
+
+
+# OpenRaster: the layers kept
+
+
+def layered_document() -> Document:
+    document = Document(new_surface(6, 5, WHITE))
+    document.add_layer()
+    paint_pixel(document.surface, 2, 3, RED)
+    document.rename_layer(1, "Ink")
+    document.set_layer_opacity(1, 0.5)
+    return document
+
+
+def wait(condition, seconds: float = 5.0) -> None:
+    context = GLib.MainContext.default()
+    deadline = time.monotonic() + seconds
+    while not condition() and time.monotonic() < deadline:
+        context.iteration(False)
+    assert condition()
+
+
+def test_saving_as_openraster_keeps_the_layers(tmp_path):
+    document = layered_document()
+    file = gio_file(tmp_path / "picture.ora")
+    save_document(document, file)
+    assert not document.modified
+    assert document.file.equal(file)
+
+    reloaded = load_document(file)
+    assert [layer.name for layer in reloaded.layers] == ["Background", "Ink"]
+    assert reloaded.layers[1].opacity == 0.5
+    assert pixel_at(reloaded.layers[1].surface, 2, 3) == (255, 0, 0, 255)
+    assert reloaded.file.equal(file)
+
+
+def test_a_layered_picture_saved_flat_is_the_picture_as_it_shows(tmp_path):
+    document = layered_document()
+    document.set_layer_opacity(1, 1.0)
+    path = tmp_path / "picture.png"
+    save_document(document, gio_file(path))
+    reloaded = load_document(gio_file(path))
+    assert len(reloaded.layers) == 1
+    assert pixel_at(reloaded.surface, 2, 3) == (255, 0, 0, 255)
+    assert pixel_at(reloaded.surface, 0, 0) == (255, 255, 255, 255)
+
+
+def test_openraster_is_told_by_its_first_bytes_whatever_its_name(tmp_path):
+    save_document(layered_document(), gio_file(tmp_path / "picture.ora"))
+    renamed = tmp_path / "picture.dat"
+    (tmp_path / "picture.ora").rename(renamed)
+    assert len(load_document(gio_file(renamed)).layers) == 2
+
+
+def test_dropping_an_openraster_file_brings_the_picture_as_it_shows(tmp_path):
+    document = layered_document()
+    document.set_layer_opacity(1, 1.0)
+    save_document(document, gio_file(tmp_path / "picture.ora"))
+    surface = load_surface(gio_file(tmp_path / "picture.ora"))
+    assert pixel_at(surface, 2, 3) == (255, 0, 0, 255)
+    assert pixel_at(surface, 0, 0) == (255, 255, 255, 255)
+
+
+def test_a_damaged_openraster_file_says_why_it_cannot_be_opened(tmp_path):
+    path = tmp_path / "broken.ora"
+    path.write_bytes(b"PK\x03\x04 not really a zip")
+    with pytest.raises(GLib.Error) as raised:
+        load_document(gio_file(path))
+    assert "OpenRaster" in raised.value.message
+
+
+def test_openraster_opens_in_the_background_too(tmp_path):
+    save_document(layered_document(), gio_file(tmp_path / "picture.ora"))
+    opened = []
+    load_document_async(gio_file(tmp_path / "picture.ora"), opened.append, pytest.fail)
+    wait(lambda: opened)
+    assert len(opened[0].layers) == 2
+
+
+def test_openraster_saves_in_the_background_too(tmp_path):
+    document = layered_document()
+    saved = []
+    save_document_async(document, gio_file(tmp_path / "picture.ora"), lambda: saved.append(True), pytest.fail)
+    wait(lambda: saved)
+    assert len(load_document(gio_file(tmp_path / "picture.ora")).layers) == 2
+    assert not document.modified
+
+
+def test_the_desktop_file_opens_openraster():
+    assert "image/openraster" in OPEN_MIME_TYPES
+    assert format_for(Gio.File.new_for_path("/tmp/a.ORA")) == "ora"

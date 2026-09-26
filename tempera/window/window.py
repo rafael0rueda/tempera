@@ -20,6 +20,7 @@ from .edit import EditMixin
 from .files import FilesMixin
 from .header import HeaderMixin
 from .image_dialogs import ImageDialogsMixin
+from .layers import LayersMixin
 from .layout import LayoutMixin
 from .options_bar import ToolOptionsMixin
 from .session import SessionMixin
@@ -54,6 +55,7 @@ class TemperaWindow(
     ImageDialogsMixin,
     FilesMixin,
     SessionMixin,
+    LayersMixin,
     Adw.ApplicationWindow,
 ):
     def __init__(self, application: Adw.Application, document: Document | None = None):
@@ -88,6 +90,8 @@ class TemperaWindow(
         self._typing = False
         self._syncing_size = False
         self._last_jpeg_quality = 90
+        # The picture already told that saving it as PNG or JPEG merges its layers.
+        self._told_of_merging: Document | None = None
 
         self._title = Adw.WindowTitle(title=APP_NAME)
         self.toasts = Adw.ToastOverlay()
@@ -184,6 +188,7 @@ class TemperaWindow(
         open_recent_action.connect("activate", self._unless_dragging(self._action_open_recent))
         self.add_action(open_recent_action)
 
+        self._install_layer_actions()
         shortcuts.apply_accels(self.get_application())
 
         clipboard = self.get_clipboard()
@@ -253,6 +258,7 @@ class TemperaWindow(
         document = self.canvas.document
         document.connect("state-changed", lambda *_args: self._sync_state())
         document.connect("content-changed", lambda *_args: self._note_change())
+        self._watch_layers(document)
         self._note_change()
         self._sync_state()
 
