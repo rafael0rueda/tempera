@@ -1,13 +1,12 @@
 # SPDX-FileCopyrightText: 2026 Rafael Rueda
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-import cairo
 
 from tempera.canvas import fit_zoom, ZOOM_MAX, ZOOM_MIN, ZOOM_PRESETS, Canvas
 from tempera.color import ColorState
 from tempera.document import Document, new_surface
 
-from pixels import paint_pixel, pixel_at
+from pixels import paint_pixel, pixel_at, render_widget
 
 WHITE = (1.0, 1.0, 1.0, 1.0)
 BLACK = (0.0, 0.0, 0.0, 1.0)
@@ -84,9 +83,7 @@ def test_set_zoom_emits_zoom_changed():
 
 def render(canvas: Canvas, width: int, height: int):
     """Draw the canvas widget into an image, the way GTK would on screen."""
-    target = cairo.ImageSurface(cairo.FORMAT_ARGB32, width, height)
-    canvas._draw(canvas, cairo.Context(target), width, height)
-    return target
+    return render_widget(canvas, width, height)
 
 
 def test_zoomed_in_pixels_stay_crisp():

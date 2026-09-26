@@ -521,3 +521,52 @@ def test_undo_waits_for_a_stroke_to_finish():
     assert pixel_at(document.surface, 0, 0) == (255, 0, 0, 255)
     document.finish_change()
     assert len(document._undo) == 2
+
+
+# What changed, for the canvas to redraw
+
+
+def paint_square(document, x, y, size):
+    cr = cairo.Context(document.surface)
+    cr.set_source_rgb(1, 0, 0)
+    cr.rectangle(x, y, size, size)
+    cr.fill()
+
+
+def test_a_change_says_which_part_of_the_image_it_touched():
+    document = Document(new_surface(40, 40))
+    document.begin_change()
+    paint_square(document, 5, 6, 3)
+    document.finish_change()
+    assert document.damage == (5, 6, 3, 3)
+
+
+def test_undo_and_redo_say_which_part_they_put_back():
+    document = Document(new_surface(40, 40))
+    document.begin_change()
+    paint_square(document, 5, 6, 3)
+    document.finish_change()
+    document.damage = None
+    document.undo()
+    assert document.damage == (5, 6, 3, 3)
+    document.damage = None
+    document.redo()
+    assert document.damage == (5, 6, 3, 3)
+
+
+def test_a_new_surface_may_have_changed_anywhere():
+    document = Document(new_surface(40, 40))
+    document.begin_change()
+    paint_square(document, 5, 6, 3)
+    document.finish_change()
+    document.resize(50, 50)
+    assert document.damage is None
+    document.undo()
+    assert document.damage is None
+
+
+def test_a_change_that_altered_nothing_touched_nothing():
+    document = Document(new_surface(40, 40))
+    document.begin_change()
+    document.commit_change()
+    assert document.damage == (0, 0, 0, 0)

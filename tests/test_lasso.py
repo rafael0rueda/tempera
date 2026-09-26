@@ -12,7 +12,7 @@ from tempera.color import ColorState
 from tempera.document import Document, new_surface
 from tempera.selection import Selection
 
-from pixels import paint_pixel, pixel_at
+from pixels import paint_pixel, pixel_at, render_widget
 
 RED = (1.0, 0.0, 0.0, 1.0)
 WHITE_PIXEL = (255, 255, 255, 255)
@@ -242,8 +242,7 @@ def test_nudging_lifts_the_outline_not_the_box(canvas):
 
 def test_the_outline_is_drawn_while_selected(canvas):
     lasso(canvas, TRIANGLE)
-    surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, 40, 40)
-    canvas._draw(None, cairo.Context(surface), 40, 40)
+    surface = render_widget(canvas, 40, 40)
     # The marching ants run along the left edge of the triangle.
     assert pixel_at(surface, 10, 20) != RED_PIXEL
 

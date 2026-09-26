@@ -35,6 +35,7 @@ python.install_sources(
     'canvas/pointer.py',
     'canvas/render.py',
     'canvas/selecting.py',
+    'canvas/tiles.py',
     'canvas/view.py',
     'canvas/widget.py',
   ),

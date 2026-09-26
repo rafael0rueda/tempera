@@ -34,7 +34,7 @@ from .view import PIXEL_GRID_ZOOM, ZoomMixin
 
 
 class Canvas(
-    PointerMixin, FloatingMixin, SelectionMixin, ZoomMixin, RenderMixin, Gtk.DrawingArea
+    PointerMixin, FloatingMixin, SelectionMixin, ZoomMixin, RenderMixin, Gtk.Widget
 ):
     """Displays the document and routes pointer input to the active tool."""
 
@@ -75,6 +75,9 @@ class Canvas(
 
         self._document: Document | None = None
         self._document_handler = 0
+        # How big the widget asks to be: the zoomed image and room for the grips.
+        self._content_size = (0, 0)
+        self._init_render()
         self._drag_origin: tuple[float, float] | None = None
         self._drag_context: ToolContext | None = None
         # The button that started a shape still waiting for more clicks; its
@@ -108,7 +111,6 @@ class Canvas(
         # Anchored top-left like the image itself; CanvasFrame does the centering.
         self.set_halign(Gtk.Align.START)
         self.set_valign(Gtk.Align.START)
-        self.set_draw_func(self._draw)
         self.set_cursor(Gdk.Cursor.new_from_name("crosshair"))
         self.add_css_class("tempera-canvas")
 
@@ -151,6 +153,13 @@ class Canvas(
 
         self.document = document
 
+    def do_measure(self, orientation: Gtk.Orientation, for_size: int):
+        size = self._content_size[0 if orientation == Gtk.Orientation.HORIZONTAL else 1]
+        return size, size, -1, -1
+
+    def do_snapshot(self, snapshot: Gtk.Snapshot) -> None:
+        self._render(snapshot)
+
     @property
     def document(self) -> Document:
         return self._document
@@ -165,10 +174,12 @@ class Canvas(
         self.set_selection(None)
         self._document = value
         self._document_handler = value.connect("content-changed", self._on_content_changed)
+        self._tiles.invalidate()
         self._sync_content_size()
         self.queue_draw()
 
     def _on_content_changed(self, *_args) -> None:
+        self._tiles.invalidate(self._document.damage)
         # Undo/redo and resizing can swap in a differently sized surface.
         if self._selection is not None:
             document = self._document
@@ -191,8 +202,10 @@ class Canvas(
         # The margin scales with zoom too, so it stays big enough to fit the
         # (also zoomed) resize handles without clipping them at the edge.
         margin = round(scaled(HANDLE_MARGIN) * self.zoom)
-        self.set_content_width(round(width * self.zoom) + margin)
-        self.set_content_height(round(height * self.zoom) + margin)
+        size = (round(width * self.zoom) + margin, round(height * self.zoom) + margin)
+        if size != self._content_size:
+            self._content_size = size
+            self.queue_resize()
         self.update_property(
             [Gtk.AccessibleProperty.LABEL],
             [

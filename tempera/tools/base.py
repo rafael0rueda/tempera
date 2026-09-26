@@ -11,6 +11,10 @@ import cairo
 from gi.repository import Gdk
 
 
+def _ignore_damage(x1: float, y1: float, x2: float, y2: float) -> None:
+    pass
+
+
 @dataclass
 class ToolContext:
     """Everything a tool needs for one interaction, handed over by the canvas."""
@@ -39,6 +43,10 @@ class ToolContext:
     reach: float = 4.0
     # Hands a hand-drawn outline to the canvas as the selection.
     select_outline: Callable[[list[tuple[float, float]]], None] | None = None
+    # A tool that paints on the surface during a drag passes the extents of
+    # what it painted, (x1, y1, x2, y2), so the canvas redraws just that. The
+    # whole change is redrawn anyway once the drag lands.
+    damage: Callable[[float, float, float, float], None] = _ignore_damage
 
     @property
     def color(self) -> Gdk.RGBA:
@@ -221,6 +229,7 @@ class FreehandTool(Tool):
             cr.arc(x, y, radius, 0, 2 * math.pi)
         else:
             cr.rectangle(x - radius, y - radius, ctx.size, ctx.size)
+        ctx.damage(*cr.fill_extents())
         cr.fill()
 
     def press(self, ctx, x, y):
@@ -235,6 +244,7 @@ class FreehandTool(Tool):
         cr = self._context(ctx)
         cr.move_to(*self._last)
         cr.line_to(x, y)
+        ctx.damage(*cr.stroke_extents())
         cr.stroke()
         self._last = (x, y)
 

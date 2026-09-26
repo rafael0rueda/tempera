@@ -15,7 +15,7 @@ from tempera.tools.airbrush import AirbrushTool, dots_per_spray
 from tempera.tools.base import ToolContext
 from tempera.window import TemperaWindow
 
-from pixels import pixel_at
+from pixels import pixel_at, render_widget
 
 WHITE = (1.0, 1.0, 1.0, 1.0)
 WHITE_PIXEL = (255, 255, 255, 255)
@@ -160,9 +160,7 @@ def test_other_tools_do_not_start_a_timer(canvas):
 def render(canvas) -> cairo.ImageSurface:
     width = round(canvas.document.width * canvas.zoom)
     height = round(canvas.document.height * canvas.zoom)
-    surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, width, height)
-    canvas._draw(None, cairo.Context(surface), width, height)
-    return surface
+    return render_widget(canvas, width, height)
 
 
 def test_the_grid_shows_only_when_on_and_zoomed_in(canvas):

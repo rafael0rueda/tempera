@@ -163,6 +163,12 @@ class ZoomMixin:
         scrolled.add_controller(pinch)
         self._pinch_zoom = 1.0
 
+        # Only what is in view gets drawn, so scrolling, or a window growing,
+        # brings in parts that have not been.
+        for adjustment in (scrolled.get_hadjustment(), scrolled.get_vadjustment()):
+            adjustment.connect("value-changed", lambda *_args: self.queue_draw())
+            adjustment.connect("changed", lambda *_args: self.queue_draw())
+
     def _adjustments(self) -> tuple[Gtk.Adjustment, Gtk.Adjustment] | None:
         scrolled = self.get_ancestor(Gtk.ScrolledWindow)
         if scrolled is None:

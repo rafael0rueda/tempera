@@ -176,6 +176,15 @@ class Patch:
     def nbytes(self) -> int:
         return surface_bytes(self.pixels) if self.pixels is not None else 0
 
+    @property
+    def rect(self) -> tuple[int, int, int, int] | None:
+        """The part of the image it covers, or None for the whole of it."""
+        if self.whole:
+            return None
+        if self.pixels is None:
+            return (self.x, self.y, 0, 0)
+        return (self.x, self.y, self.pixels.get_width(), self.pixels.get_height())
+
     def apply(self, surface: cairo.ImageSurface) -> tuple[cairo.ImageSurface, Patch]:
         """Put the pixels back; returns the resulting surface and the patch that reverses it."""
         if self.whole:
@@ -222,6 +231,9 @@ class Document(GObject.Object):
         # The image as it was when begin_change() was called, until the change
         # is committed and only the part it altered is kept.
         self._before: cairo.ImageSurface | None = None
+        # The part of the image the last change touched, as (x, y, width,
+        # height), or None when it may be anywhere: a view redraws only that.
+        self.damage: tuple[int, int, int, int] | None = None
 
     @property
     def width(self) -> int:
@@ -271,13 +283,21 @@ class Document(GObject.Object):
         self._redo = []
         self._trim_history()
 
-    def commit_change(self) -> None:
-        """Keep the change begun earlier as one undo step, even if it altered nothing."""
-        if self._before is not None:
-            before, self._before = self._before, None
-            self._record(patch_between(before, self.surface) or Patch(0, 0, None))
+    def _changed(self, damage: tuple[int, int, int, int] | None) -> None:
+        """Tell the views the image changed, and where."""
+        self.damage = damage
         self.emit("content-changed")
         self.emit("state-changed")
+
+    def commit_change(self) -> None:
+        """Keep the change begun earlier as one undo step, even if it altered nothing."""
+        if self._before is None:
+            self._changed(None)
+            return
+        before, self._before = self._before, None
+        patch = patch_between(before, self.surface) or Patch(0, 0, None)
+        self._record(patch)
+        self._changed(patch.rect)
 
     def _trim_history(self) -> None:
         """Drop the oldest undo steps past MAX_UNDO or UNDO_BUDGET, keeping the newest."""
@@ -310,8 +330,7 @@ class Document(GObject.Object):
         if patch is None:
             return
         self._record(patch)
-        self.emit("content-changed")
-        self.emit("state-changed")
+        self._changed(patch.rect)
 
     @property
     def can_undo(self) -> bool:
@@ -326,19 +345,19 @@ class Document(GObject.Object):
         # finished, and taking an older one back would tangle the two.
         if not self._undo or self._before is not None:
             return
-        self.surface, reverse = self._undo.pop().apply(self.surface)
+        patch = self._undo.pop()
+        self.surface, reverse = patch.apply(self.surface)
         self._redo.append(reverse)
-        self.emit("content-changed")
-        self.emit("state-changed")
+        self._changed(patch.rect)
 
     def redo(self) -> None:
         if not self._redo or self._before is not None:
             return
-        self.surface, reverse = self._redo.pop().apply(self.surface)
+        patch = self._redo.pop()
+        self.surface, reverse = patch.apply(self.surface)
         self._undo.append(reverse)
         self._trim_history()
-        self.emit("content-changed")
-        self.emit("state-changed")
+        self._changed(patch.rect)
 
     def _replace_surface(self, surface: cairo.ImageSurface) -> None:
         """Swap in a new image as one undo step, keeping the old one whole.
@@ -348,8 +367,7 @@ class Document(GObject.Object):
         """
         self._record(Patch(0, 0, self.surface, whole=True))
         self.surface = surface
-        self.emit("content-changed")
-        self.emit("state-changed")
+        self._changed(None)
 
     def _resized_surface(
         self, width: int, height: int, fill=(1.0, 1.0, 1.0, 1.0)

@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 
 from gi.repository import Gdk, GLib
 
@@ -193,6 +194,7 @@ class PointerMixin:
             begin_text=self.begin_text,
             select_region=self.select_region,
             select_outline=self.select_outline,
+            damage=self._damage,
         )
 
     def _on_drag_begin(self, gesture, start_x, start_y):
@@ -306,7 +308,11 @@ class PointerMixin:
         canvas takes no other press or key meanwhile, and the actions that
         change the image wait, as they do for any drag.
         """
-        tool, context = self.active_tool, self._drag_context
+        tool = self.active_tool
+        # What it paints is noted here and passed on once it is done, since
+        # only the UI thread may touch what is drawn on screen.
+        painted: list[tuple[float, float, float, float]] = []
+        context = replace(self._drag_context, damage=lambda *extents: painted.append(extents))
         self._working = True
         self.set_cursor(Gdk.Cursor.new_from_name("progress"))
 
@@ -322,6 +328,8 @@ class PointerMixin:
         def done(error: Exception | None) -> None:
             self._working = False
             self._set_cursor(None)
+            for extents in painted:
+                self._damage(*extents)
             if self._pending_release is not None:
                 release, self._pending_release = self._pending_release, None
                 self._finish_stroke(*release)

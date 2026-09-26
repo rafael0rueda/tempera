@@ -49,6 +49,7 @@ class AirbrushTool(FreehandTool):
             x = math.floor(cx + distance * math.cos(angle))
             y = math.floor(cy + distance * math.sin(angle))
             cr.rectangle(x, y, 1, 1)
+        ctx.damage(*cr.fill_extents())
         cr.fill()
 
     def press(self, ctx, x, y):

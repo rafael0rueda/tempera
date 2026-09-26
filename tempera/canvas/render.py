@@ -9,13 +9,14 @@ import math
 from functools import cache
 
 import cairo
-from gi.repository import Adw, Gdk
+from gi.repository import Adw, Gdk, Graphene, Gsk, Gtk
 
 from ..interface_size import scaled
 from ..tools import draw_marquee
 from ..tools.base import draw_outline_marquee
 from .floating import TEXT_PADDING
 from .pointer import HANDLE_RADIUS, HANDLE_RING, HANDLE_SIZE
+from .tiles import ImageTiles, surface_texture
 
 CHECKER_SIZE = 8
 # Below this zoom the image is shrunk, where smoothing reads better than dropped
@@ -24,14 +25,10 @@ SMOOTH_ZOOM_BELOW = 1.0
 
 
 @cache
-def _checker_pattern() -> cairo.SurfacePattern:
-    """One 2 × 2 tile of the checkerboard, repeated by cairo.
-
-    Drawing each square as its own rectangle came to half a million of them per
-    frame on the largest canvas.
-    """
+def _checker_texture() -> Gdk.Texture:
+    """One 2 × 2 tile of the checkerboard, repeated under the image."""
     size = CHECKER_SIZE * 2
-    tile = cairo.ImageSurface(cairo.FORMAT_RGB24, size, size)
+    tile = cairo.ImageSurface(cairo.FORMAT_ARGB32, size, size)
     cr = cairo.Context(tile)
     cr.set_source_rgb(1, 1, 1)
     cr.paint()
@@ -39,16 +36,129 @@ def _checker_pattern() -> cairo.SurfacePattern:
     cr.rectangle(CHECKER_SIZE, 0, CHECKER_SIZE, CHECKER_SIZE)
     cr.rectangle(0, CHECKER_SIZE, CHECKER_SIZE, CHECKER_SIZE)
     cr.fill()
-    pattern = cairo.SurfacePattern(tile)
-    pattern.set_extend(cairo.EXTEND_REPEAT)
-    pattern.set_filter(cairo.FILTER_NEAREST)
-    return pattern
+    tile.flush()
+    return surface_texture(tile, 0, 0, size, size)
+
+
+def _rect(x: float, y: float, width: float, height: float) -> Graphene.Rect:
+    return Graphene.Rect().init(x, y, width, height)
 
 
 class RenderMixin:
-    """Draws the image, a tool's preview, and the outlines and grips over them."""
+    """Draws the image, a tool's preview, and the outlines and grips over them.
 
-    def _draw(self, area, cr: cairo.Context, width: int, height: int, *_args):
+    The image goes to the GPU as tiles of texture, which it scales to the zoom
+    by itself, and only the tiles a change touched are uploaded again. What is
+    drawn over it with cairo covers just the part of the screen it takes up.
+    """
+
+    def _init_render(self) -> None:
+        self._tiles = ImageTiles()
+
+    def _damage(self, x1: float, y1: float, x2: float, y2: float) -> None:
+        """A tool painted within these extents; their tiles need uploading again."""
+        # Antialiasing reaches into the pixels the extents only partly cover.
+        left, top = math.floor(x1) - 1, math.floor(y1) - 1
+        self._tiles.invalidate((left, top, math.ceil(x2) + 1 - left, math.ceil(y2) + 1 - top))
+
+    def _visible_area(self) -> tuple[float, float, float, float]:
+        """The part of the canvas in view, in its own coordinates."""
+        width, height = self._content_size
+        scrolled = self.get_ancestor(Gtk.ScrolledWindow)
+        if scrolled is not None:
+            found, bounds = scrolled.compute_bounds(self)
+            if found:
+                left, top = max(0.0, bounds.get_x()), max(0.0, bounds.get_y())
+                right = min(float(width), bounds.get_x() + bounds.get_width())
+                bottom = min(float(height), bounds.get_y() + bounds.get_height())
+                return left, top, max(0.0, right - left), max(0.0, bottom - top)
+        return 0.0, 0.0, float(width), float(height)
+
+    def _pixel_aligner(self):
+        """A function moving a point on the canvas onto the nearest corner of a device pixel.
+
+        Device pixels are counted from the corner of the window's surface, which
+        with a fractional scale, or a scroll part way through a pixel, the
+        canvas's own corner need not sit on.
+        """
+        native = self.get_native()
+        surface = native.get_surface() if native is not None else None
+        if surface is None:
+            return lambda x, y: (round(x), round(y))
+        scale = surface.get_scale()
+        found, origin = self.compute_point(native, Graphene.Point().init(0, 0))
+        offset_x, offset_y = native.get_surface_transform()
+        if not found:
+            return lambda x, y: (round(x), round(y))
+        origin_x, origin_y = origin.x + offset_x, origin.y + offset_y
+        return lambda x, y: (
+            round((x + origin_x) * scale) / scale - origin_x,
+            round((y + origin_y) * scale) / scale - origin_y,
+        )
+
+    def _render(self, snapshot: Gtk.Snapshot) -> None:
+        document, zoom = self._document, self.zoom
+        visible = self._visible_area()
+        view_x, view_y, view_width, view_height = visible
+        if view_width <= 0 or view_height <= 0:
+            return
+
+        # The part of the image in view, in image pixels.
+        left, top = view_x / zoom, view_y / zoom
+        right = min(float(document.width), (view_x + view_width) / zoom)
+        bottom = min(float(document.height), (view_y + view_height) / zoom)
+        if right > left and bottom > top:
+            # Laid out on screen rather than in image pixels under a scale: see
+            # ImageTiles.snapshot().
+            checker = CHECKER_SIZE * 2 * zoom
+            snapshot.push_repeat(
+                _rect(left * zoom, top * zoom, (right - left) * zoom, (bottom - top) * zoom),
+                _rect(0, 0, checker, checker),
+            )
+            snapshot.append_scaled_texture(
+                _checker_texture(), Gsk.ScalingFilter.NEAREST, _rect(0, 0, checker, checker)
+            )
+            snapshot.pop()
+            scaling = (
+                Gsk.ScalingFilter.NEAREST if zoom >= SMOOTH_ZOOM_BELOW else Gsk.ScalingFilter.TRILINEAR
+            )
+            self._tiles.snapshot(
+                snapshot,
+                document.surface,
+                (left, top, right - left, bottom - top),
+                zoom,
+                scaling,
+                self._pixel_aligner(),
+            )
+
+        accent = self._accent()
+        self._snapshot_overlays(snapshot, visible, accent)
+        self._snapshot_handles(snapshot, accent)
+
+    def _snapshot_overlays(
+        self, snapshot: Gtk.Snapshot, visible: tuple[float, float, float, float], accent: Gdk.RGBA
+    ) -> None:
+        """Draw the previews and outlines with cairo, over no more than they cover.
+
+        They are recorded first, and the recording played back into a cairo
+        node just the size of what it holds: most of the time that is nothing,
+        or a small box, rather than the whole view.
+        """
+        recording = cairo.RecordingSurface(cairo.CONTENT_COLOR_ALPHA, None)
+        cr = cairo.Context(recording)
+        cr.rectangle(*visible)
+        cr.clip()
+        self._draw_overlays(cr, accent)
+        x, y, width, height = recording.ink_extents()
+        if width <= 0 or height <= 0:
+            return
+        left, top = math.floor(x), math.floor(y)
+        bounds = _rect(left, top, math.ceil(x + width) - left, math.ceil(y + height) - top)
+        cr = snapshot.append_cairo(bounds)
+        cr.set_source_surface(recording, 0, 0)
+        cr.paint()
+
+    def _draw_overlays(self, cr: cairo.Context, accent: Gdk.RGBA) -> None:
         image_width, image_height = self._document.width, self._document.height
 
         # Everything below is laid out in image pixels; this one transform is
@@ -56,28 +166,19 @@ class RenderMixin:
         cr.save()
         cr.scale(self.zoom, self.zoom)
 
-        cr.save()
-        cr.rectangle(0, 0, image_width, image_height)
-        cr.clip()
-        self._draw_checkerboard(cr)
-        cr.set_source_surface(self._document.surface, 0, 0)
-        if self.zoom >= SMOOTH_ZOOM_BELOW:
-            cr.get_source().set_filter(cairo.FILTER_NEAREST)
-        cr.paint()
-
         context = self._drag_context
         if context is None and self.active_tool.in_progress:
             context = self._make_context(self._shape_button)
         if context is not None:
             cr.save()
+            cr.rectangle(0, 0, image_width, image_height)
+            cr.clip()
             self.active_tool.draw_preview(cr, context)
             cr.restore()
-        cr.restore()
 
         if self.pixel_grid_visible:
             self._draw_pixel_grid(cr, image_width, image_height)
 
-        accent = self._accent()
         frame = self.active_tool.frame() if self.active_tool.adjustable else None
         if frame is not None and frame[2] >= 1 and frame[3] >= 1:
             self._draw_dashed_rect(cr, accent, *frame)
@@ -96,7 +197,6 @@ class RenderMixin:
                 cr.restore()
             else:
                 draw_marquee(cr, *self._selection.rect)
-        self._draw_handles(cr, accent)
         cr.restore()
 
     def _draw_pixel_grid(self, cr: cairo.Context, image_width: int, image_height: int) -> None:
@@ -237,35 +337,28 @@ class RenderMixin:
             cr.rectangle(caret_x, caret_y, 1, caret_height)
             cr.fill()
 
-    def _draw_handles(self, cr: cairo.Context, accent: Gdk.RGBA) -> None:
-        size = scaled(HANDLE_SIZE)
-        ring = scaled(HANDLE_RING)
-        for hx, hy in self._handles().values():
-            # A white ring keeps the grip readable on top of dark artwork.
-            _rounded_square(cr, hx, hy, size + 2 * ring, scaled(HANDLE_RADIUS) + ring)
-            cr.set_source_rgb(1, 1, 1)
-            cr.fill()
-            _rounded_square(cr, hx, hy, size, scaled(HANDLE_RADIUS))
-            cr.set_source_rgba(accent.red, accent.green, accent.blue, 1.0)
-            cr.fill()
-
-    @staticmethod
-    def _draw_checkerboard(cr: cairo.Context) -> None:
-        """Fill the current clip with the transparency checkerboard."""
-        cr.save()
-        cr.set_source(_checker_pattern())
-        cr.paint()
-        cr.restore()
-
-
-def _rounded_square(cr: cairo.Context, x: float, y: float, size: float, radius: float) -> None:
-    """A square path centred on a point, its corners rounded."""
-    half = size / 2
-    radius = min(radius, half)
-    left, top, right, bottom = x - half, y - half, x + half, y + half
-    cr.new_sub_path()
-    cr.arc(right - radius, top + radius, radius, -math.pi / 2, 0)
-    cr.arc(right - radius, bottom - radius, radius, 0, math.pi / 2)
-    cr.arc(left + radius, bottom - radius, radius, math.pi / 2, math.pi)
-    cr.arc(left + radius, top + radius, radius, math.pi, 3 * math.pi / 2)
-    cr.close_path()
+    def _snapshot_handles(self, snapshot: Gtk.Snapshot, accent: Gdk.RGBA) -> None:
+        """The grips, as rounded squares; they grow with the zoom like the image."""
+        handles = self._handles()
+        if not handles:
+            return
+        size, ring, radius = scaled(HANDLE_SIZE), scaled(HANDLE_RING), scaled(HANDLE_RADIUS)
+        # A white ring keeps the grip readable on top of dark artwork.
+        layers = (
+            (size + 2 * ring, radius + ring, Gdk.RGBA(red=1, green=1, blue=1, alpha=1)),
+            (size, radius, Gdk.RGBA(red=accent.red, green=accent.green, blue=accent.blue, alpha=1)),
+        )
+        snapshot.save()
+        snapshot.scale(self.zoom, self.zoom)
+        for hx, hy in handles.values():
+            for extent, corner, color in layers:
+                half = extent / 2
+                square = _rect(hx - half, hy - half, extent, extent)
+                # Built in steps: what init_from_rect() returns points into the
+                # temporary struct it was called on, which is freed straight away.
+                outline = Gsk.RoundedRect()
+                outline.init_from_rect(square, min(corner, half))
+                snapshot.push_rounded_clip(outline)
+                snapshot.append_color(color, square)
+                snapshot.pop()
+        snapshot.restore()

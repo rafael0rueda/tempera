@@ -138,4 +138,7 @@ class FillTool(Tool):
         return (ctx.color,)
 
     def press(self, ctx: ToolContext, x, y):
-        flood_fill(ctx.surface, int(x), int(y), ctx.color, ctx.tolerance)
+        painted = flood_fill(ctx.surface, int(x), int(y), ctx.color, ctx.tolerance)
+        if painted is not None:
+            left, top, width, height = painted
+            ctx.damage(left, top, left + width, top + height)
