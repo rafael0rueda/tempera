@@ -22,7 +22,6 @@ python.install_sources(
     'shortcuts_dialog.py',
     'text.py',
     'tool_icon.py',
-    'window.py',
   ),
   subdir: 'tempera',
 )
@@ -39,6 +38,21 @@ python.install_sources(
     'canvas/widget.py',
   ),
   subdir: 'tempera/canvas',
+)
+
+python.install_sources(
+  files(
+    'window/__init__.py',
+    'window/edit.py',
+    'window/files.py',
+    'window/header.py',
+    'window/image_dialogs.py',
+    'window/layout.py',
+    'window/options_bar.py',
+    'window/session.py',
+    'window/window.py',
+  ),
+  subdir: 'tempera/window',
 )
 
 python.install_sources(
