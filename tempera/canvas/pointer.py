@@ -12,7 +12,7 @@ from gi.repository import Gdk, GLib
 from ..background import run_in_background
 from ..document import MAX_SIZE
 from ..interface_size import scaled
-from ..tools import ToolContext
+from ..tools import WAND_TOOL_ID, ToolContext
 from ..tools.base import rect_handles
 from .floating import TEXT_PADDING
 
@@ -187,13 +187,14 @@ class PointerMixin:
             fill_shapes=self.fill_shapes,
             outline_shapes=self.outline_shapes,
             erase_to_transparency=self.erase_to_transparency,
-            tolerance=self.fill_tolerance,
+            tolerance=self.wand_tolerance if self.active_tool.id == WAND_TOOL_ID else self.fill_tolerance,
             density=self.airbrush_density,
             reach=scaled(POINT_REACH) / self.zoom,
             pick_color=lambda color, btn: self.emit("color-picked", color, btn),
             begin_text=self.begin_text,
             select_region=self.select_region,
             select_outline=self.select_outline,
+            select_pixels=self.select_pixels,
             damage=self._damage,
             picture=self._document.flattened,
         )

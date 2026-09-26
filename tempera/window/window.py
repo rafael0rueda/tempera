@@ -214,6 +214,7 @@ class TemperaWindow(
         self.canvas.commit_floating()
         action.set_state(value)
         self.canvas.select_tool(value.get_string())
+        self._sync_selection_button(value.get_string())
         self._sync_tool_options()
         self._sync_size_scale()
 

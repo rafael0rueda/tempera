@@ -55,6 +55,12 @@ class SelectionMixin:
         if self._selection is not None:
             self.grab_focus()
 
+    def select_pixels(self, selection: Selection | None) -> None:
+        """Take a selection picked out pixel by pixel, as the magic wand's is."""
+        self.set_selection(selection)
+        if self._selection is not None:
+            self.grab_focus()
+
     def select_all(self) -> None:
         self.commit_floating()
         self.select_region(0, 0, self._document.width, self._document.height)

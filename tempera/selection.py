@@ -5,10 +5,12 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+from functools import cached_property
 
 import cairo
 
 from .document import crop_surface, keep_inside
+from .regions import flood_spans, spans_mask
 
 Point = tuple[float, float]
 
@@ -130,9 +132,75 @@ class Selection:
             mask = _crop_mask(mask, x, y, width, height)
         return cls(left + x, top + y, width, height, mask, tuple(outline))
 
+    @classmethod
+    def from_color(
+        cls, surface: cairo.ImageSurface, x: float, y: float, tolerance: int
+    ) -> Selection | None:
+        """The pixels joined to the one at a point through colours near enough its own,
+        as the magic wand picks them, or None for a point off the image."""
+        px, py = int(x), int(y)
+        if not (0 <= px < surface.get_width() and 0 <= py < surface.get_height()):
+            return None
+        surface.flush()
+        spans = list(flood_spans(surface, px, py, tolerance))
+        rect, mask = spans_mask(spans)
+        if sum(end - start for _row, start, end in spans) == rect[2] * rect[3]:
+            # Every pixel of the rectangle: it needs no mask.
+            return cls(*rect)
+        return cls(*rect, mask)
+
     @property
     def rect(self) -> tuple[int, int, int, int]:
         return self.x, self.y, self.width, self.height
+
+    @cached_property
+    def edges(self) -> list[tuple[int, int, int, int]]:
+        """The border of a masked selection, as horizontal and vertical lines
+        (x1, y1, x2, y2) along the edges of its pixels, in image pixels."""
+        if self.mask is None:
+            x, y, width, height = self.rect
+            return [(x, y, x + width, y), (x + width, y, x + width, y + height),
+                    (x, y + height, x + width, y + height), (x, y, x, y + height)]
+        self.mask.flush()
+        data, stride = self.mask.get_data(), self.mask.get_stride()
+        width, height = self.width, self.height
+        inside = bytes(0 if value == 0 else 1 for value in range(256))
+        edges = []
+        # Upright lines running down from the row they started on, by column.
+        running: dict[int, int] = {}
+        previous = bytes(width)
+        for row in range(height + 1):
+            current = (
+                data[row * stride:row * stride + width].tobytes().translate(inside)
+                if row < height
+                else bytes(width)
+            )
+            # Across: wherever this row and the one above differ.
+            changed = (int.from_bytes(previous, "little") ^ int.from_bytes(current, "little")).to_bytes(
+                width, "little"
+            )
+            start = changed.find(1)
+            while start >= 0:
+                end = changed.find(0, start)
+                end = width if end < 0 else end
+                edges.append((self.x + start, self.y + row, self.x + end, self.y + row))
+                start = changed.find(1, end)
+            # Up and down: wherever a pixel differs from the one to its left.
+            padded = b"\x00" + current + b"\x00"
+            steps = (int.from_bytes(padded[:-1], "little") ^ int.from_bytes(padded[1:], "little")).to_bytes(
+                width + 1, "little"
+            )
+            columns = set()
+            column = steps.find(1)
+            while column >= 0:
+                columns.add(column)
+                column = steps.find(1, column + 1)
+            for column in [column for column in running if column not in columns]:
+                edges.append((self.x + column, self.y + running.pop(column), self.x + column, self.y + row))
+            for column in columns:
+                running.setdefault(column, row)
+            previous = current
+        return edges
 
     def contains(self, x: float, y: float) -> bool:
         if not (self.x <= x <= self.x + self.width and self.y <= y <= self.y + self.height):

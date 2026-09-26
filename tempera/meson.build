@@ -18,6 +18,7 @@ python.install_sources(
     'printing.py',
     'recent_files.py',
     'recovery.py',
+    'regions.py',
     'selection.py',
     'settings.py',
     'shortcuts.py',
@@ -83,6 +84,7 @@ python.install_sources(
     'tools/star.py',
     'tools/text.py',
     'tools/triangle.py',
+    'tools/wand.py',
   ),
   subdir: 'tempera/tools',
 )

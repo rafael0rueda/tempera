@@ -18,8 +18,10 @@ from ..tools import (
     AIRBRUSH_TOOL_ID,
     DEFAULT_DENSITY,
     DEFAULT_TOLERANCE,
+    DEFAULT_WAND_TOLERANCE,
     ERASER_TOOL_ID,
     FILL_TOOL_ID,
+    SELECTION_TOOL_IDS,
     SHAPES_TOOL_ID,
     TEXT_TOOL_ID,
     Tool,
@@ -68,6 +70,7 @@ class Canvas(
         self._outline_shapes = True
         self.erase_to_transparency = False
         self.fill_tolerance = DEFAULT_TOLERANCE
+        self.wand_tolerance = DEFAULT_WAND_TOLERANCE
         self.airbrush_density = DEFAULT_DENSITY
         self._show_pixel_grid = False
         self.font = DEFAULT_FONT
@@ -314,6 +317,11 @@ class Canvas(
     @property
     def supports_tolerance(self) -> bool:
         return self.active_tool.id == FILL_TOOL_ID
+
+    @property
+    def supports_selection_options(self) -> bool:
+        """Whether the tool in hand makes selections, which the selection options apply to."""
+        return self.active_tool.id in SELECTION_TOOL_IDS
 
     def set_font(self, font: str) -> None:
         self.font = font

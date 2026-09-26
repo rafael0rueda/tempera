@@ -14,7 +14,7 @@ from gi.repository import Adw, Gdk, Graphene, Gsk, Gtk
 from ..document import Damage, Layer
 from ..interface_size import scaled
 from ..tools import draw_marquee
-from ..tools.base import draw_outline_marquee
+from ..tools.base import draw_edges_marquee, draw_outline_marquee
 from .floating import TEXT_PADDING
 from .pointer import HANDLE_RADIUS, HANDLE_RING, HANDLE_SIZE
 from .tiles import ImageTiles, mask_texture, surface_texture
@@ -298,15 +298,19 @@ class RenderMixin:
             self._draw_dashed_rect(cr, accent, paste.x, paste.y, paste.width, paste.height)
         if self._text is not None:
             self._draw_text_frame(cr, accent)
-        if self._selection is not None:
-            if self._selection.outline is not None:
+        selection = self._selection
+        if selection is not None:
+            if selection.outline is not None:
                 cr.save()
                 cr.rectangle(0, 0, image_width, image_height)
                 cr.clip()
-                draw_outline_marquee(cr, self._selection.outline)
+                draw_outline_marquee(cr, selection.outline)
                 cr.restore()
+            elif selection.mask is not None:
+                # Picked out pixel by pixel: the ants follow the pixels' edges.
+                draw_edges_marquee(cr, selection.edges)
             else:
-                draw_marquee(cr, *self._selection.rect)
+                draw_marquee(cr, *selection.rect)
 
     def _draw_pixel_grid(self, cr: cairo.Context, image_width: int, image_height: int) -> None:
         """A line between every two pixels, drawn on screen pixels so it stays one pixel thin."""

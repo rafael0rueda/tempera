@@ -10,7 +10,7 @@ from gi.repository import GLib, Gtk, Pango
 from ..color import ColorChip
 from ..i18n import _
 from ..text import FONT_SIZE_RANGE, font_size, font_without_size, with_font_size
-from ..tools import DENSITY_RANGE, SHAPE_CLASSES
+from ..tools import DENSITY_RANGE, SELECTION_SHAPE_IDS, SHAPE_CLASSES, TOOL_CLASSES, WAND_TOOL_ID
 
 # The one size slider serves the brush and, with the text tool up, the font.
 BRUSH_SIZE_RANGE = (1, 64)
@@ -147,6 +147,32 @@ class ToolOptionsMixin:
         self._density_scale.set_tooltip_text(_("How thickly the airbrush sprays"))
         self._density_scale.update_property([Gtk.AccessibleProperty.LABEL], [_("Density")])
         self._add_page("airbrush", _row(_caption(_("Density")), self._density_scale, density_value))
+
+        # The two ways of drawing a selection share one button in the sidebar;
+        # here is where one is picked over the other.
+        selection_shapes = Gtk.Box(valign=Gtk.Align.CENTER)
+        selection_shapes.add_css_class("linked")
+        selection_shapes.add_css_class("tempera-shape-picker")
+        for tool in TOOL_CLASSES:
+            if tool.id in SELECTION_SHAPE_IDS:
+                button = Gtk.ToggleButton(icon_name=tool.icon_name)
+                button.add_css_class("tempera-option-toggle")
+                self._add_shortcut_tooltip(button, tool.label, f"win.tool::{tool.id}")
+                button.set_action_name("win.tool")
+                button.set_action_target_value(GLib.Variant.new_string(tool.id))
+                selection_shapes.append(button)
+        self._add_page("select", selection_shapes)
+
+        self._wand_tolerance_scale, wand_value = self._option_scale(
+            TOLERANCE_RANGE,
+            self.canvas.wand_tolerance,
+            lambda scale: setattr(self.canvas, "wand_tolerance", int(scale.get_value())),
+        )
+        self._wand_tolerance_scale.set_tooltip_text(
+            _("How far the selection spreads into colours near the one you clicked")
+        )
+        self._wand_tolerance_scale.update_property([Gtk.AccessibleProperty.LABEL], [_("Tolerance")])
+        self._add_page("wand", _row(_caption(_("Tolerance")), self._wand_tolerance_scale, wand_value))
 
         # The button names the typeface; the size is the one before it.
         self._font_label = Gtk.Label(label=font_without_size(self.canvas.font))
@@ -301,6 +327,10 @@ class ToolOptionsMixin:
             page = "airbrush"
         elif canvas.supports_font:
             page = "text"
+        elif canvas.active_tool.id in SELECTION_SHAPE_IDS:
+            page = "select"
+        elif canvas.active_tool.id == WAND_TOOL_ID:
+            page = "wand"
         self._tool_options.set_visible_child_name(page)
 
     def _choose_font(self, *_args) -> None:

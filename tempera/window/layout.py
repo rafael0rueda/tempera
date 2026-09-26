@@ -13,7 +13,7 @@ from ..color import PaletteLayout
 from ..i18n import _
 from ..settings import PALETTE_POSITIONS, save_palette_position
 from ..tool_icon import ToolIcon
-from ..tools import TOOL_CLASSES
+from ..tools import SELECTION_SHAPE_IDS, SIDEBAR_TOOL_CLASSES, TOOL_CLASSES
 from .layers_panel import LayersPanel
 
 # Sizes of the panels and bars, given for the default interface size and
@@ -172,7 +172,7 @@ class LayoutMixin:
         self._sidebar = sidebar
 
         tools = Gtk.Grid(row_spacing=4, column_spacing=4, halign=Gtk.Align.CENTER)
-        for index, tool in enumerate(TOOL_CLASSES):
+        for index, tool in enumerate(SIDEBAR_TOOL_CLASSES):
             button = Gtk.ToggleButton(child=ToolIcon(tool.icon_name, tool.tip_icon_name, self.colors))
             self._add_shortcut_tooltip(button, tool.label, f"win.tool::{tool.id}")
             button.add_css_class("flat")
@@ -180,6 +180,8 @@ class LayoutMixin:
             button.set_action_name("win.tool")
             button.set_action_target_value(GLib.Variant.new_string(tool.id))
             tools.attach(button, index % 2, index // 2, 1, 1)
+            if tool.id in SELECTION_SHAPE_IDS:
+                self._selection_button = button
         sidebar.append(tools)
 
         # The palette's place when it is on the left: under the tools.
@@ -201,6 +203,17 @@ class LayoutMixin:
         )
         scrolled.set_child(sidebar)
         return scrolled
+
+    def _sync_selection_button(self, tool_id: str) -> None:
+        """Let the one button for both selection shapes take up the one just used."""
+        if tool_id not in SELECTION_SHAPE_IDS:
+            return
+        tool = next(tool for tool in TOOL_CLASSES if tool.id == tool_id)
+        button = self._selection_button
+        button.set_action_target_value(GLib.Variant.new_string(tool.id))
+        button.get_child().set_icons(tool.icon_name, tool.tip_icon_name)
+        self._shortcut_tooltips = [entry for entry in self._shortcut_tooltips if entry[0] is not button]
+        self._add_shortcut_tooltip(button, tool.label, f"win.tool::{tool.id}")
 
     def _on_palette_position_changed(self, action, value: GLib.Variant) -> None:
         position = value.get_string()
@@ -239,7 +252,9 @@ class LayoutMixin:
         self._status_bar.set_size_request(-1, scaled(STATUS_BAR_HEIGHT))
         # The sliders keep their length, only their knobs grow, so the options
         # bar still fits a normal window at a bigger size.
-        for scale in (self._size_scale, self._tolerance_scale, self._density_scale):
+        for scale in (
+            self._size_scale, self._tolerance_scale, self._wand_tolerance_scale, self._density_scale
+        ):
             scale.set_size_request(OPTION_SCALE_WIDTH, -1)
         self._color_bar.sync_size()
         self.canvas.sync_interface_size()

@@ -33,6 +33,7 @@ tempera/tools/shapes.py
 tempera/tools/star.py
 tempera/tools/text.py
 tempera/tools/triangle.py
+tempera/tools/wand.py
 tempera/window/edit.py
 tempera/window/files.py
 tempera/window/header.py

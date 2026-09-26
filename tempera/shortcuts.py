@@ -36,6 +36,7 @@ TOOL_KEYS = {
     "picker": "k",
     "select": "s",
     "lasso": "<Shift>s",
+    "wand": "m",
 }
 
 # Each shape has a key that also takes up the Shapes tool, so the Shapes

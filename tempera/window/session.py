@@ -104,6 +104,9 @@ class SessionMixin:
             load_setting("fill-tolerance"), self.canvas.fill_tolerance, TOLERANCE_RANGE
         )
         self._tolerance_scale.set_value(self.canvas.fill_tolerance)
+        self._wand_tolerance_scale.set_value(
+            _whole(load_setting("wand-tolerance"), self.canvas.wand_tolerance, TOLERANCE_RANGE)
+        )
         self.canvas.fill_shapes = load_setting("shape-fill") == "1"
         self.canvas.outline_shapes = load_setting("shape-outline") != "0" or not self.canvas.fill_shapes
         self._density_scale.set_value(
@@ -139,6 +142,7 @@ class SessionMixin:
                 "shape-outline": "1" if self.canvas.outline_shapes else "0",
                 "font": self.canvas.font,
                 "fill-tolerance": self.canvas.fill_tolerance,
+                "wand-tolerance": self.canvas.wand_tolerance,
                 "airbrush-density": self.canvas.airbrush_density,
                 "pixel-grid": "1" if self.canvas.show_pixel_grid else "0",
                 "layers-panel": "1" if self._layers_strip.get_visible() else "0",

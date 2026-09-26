@@ -12,6 +12,7 @@ from .picker import PickerTool
 from .select import SelectTool
 from .shapes import DEFAULT_SHAPE, SHAPE_CLASSES, ShapesTool
 from .text import TextTool
+from .wand import TOLERANCE as DEFAULT_WAND_TOLERANCE, MagicWandTool
 
 TOOL_CLASSES = [
     PencilTool,
@@ -24,7 +25,13 @@ TOOL_CLASSES = [
     PickerTool,
     SelectTool,
     LassoTool,
+    MagicWandTool,
 ]
+
+# The sidebar has one button for the two ways of drawing a selection, which
+# takes up whichever was used last; the options bar picks between them.
+SELECTION_SHAPE_IDS = [SelectTool.id, LassoTool.id]
+SIDEBAR_TOOL_CLASSES = [cls for cls in TOOL_CLASSES if cls is not LassoTool]
 
 SHAPES_TOOL_ID = ShapesTool.id
 AIRBRUSH_TOOL_ID = AirbrushTool.id
@@ -33,8 +40,9 @@ ERASER_TOOL_ID = EraserTool.id
 FILL_TOOL_ID = FillTool.id
 TEXT_TOOL_ID = TextTool.id
 SELECT_TOOL_ID = SelectTool.id
+WAND_TOOL_ID = MagicWandTool.id
 # The tools that pick out part of the image, and can grab it to move it.
-SELECTION_TOOL_IDS = {SelectTool.id, LassoTool.id}
+SELECTION_TOOL_IDS = {SelectTool.id, LassoTool.id, MagicWandTool.id}
 
 
 def create_tools() -> dict[str, Tool]:
@@ -59,5 +67,9 @@ __all__ = [
     "TEXT_TOOL_ID",
     "SELECT_TOOL_ID",
     "SELECTION_TOOL_IDS",
+    "SELECTION_SHAPE_IDS",
+    "SIDEBAR_TOOL_CLASSES",
+    "WAND_TOOL_ID",
+    "DEFAULT_WAND_TOLERANCE",
     "create_tools",
 ]

@@ -23,6 +23,12 @@ class ToolIcon(Gtk.Widget):
         self._colors = colors
         self._watch = colors.connect("changed", lambda *_args: self.queue_draw())
 
+    def set_icons(self, icon_name: str, tip_icon_name: str) -> None:
+        """Show another tool's icon, as the one button for both selection shapes does."""
+        self._icon.set_from_icon_name(icon_name)
+        self.tip_icon_name = tip_icon_name
+        self.queue_draw()
+
     def do_dispose(self) -> None:
         if self._watch:
             self._colors.disconnect(self._watch)

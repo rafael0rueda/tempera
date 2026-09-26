@@ -50,6 +50,9 @@ class ToolContext:
     # One rectangle of the picture as it shows, every visible layer blended,
     # as (x, y, width, height). Without it, the current layer stands in.
     picture: Callable[[int, int, int, int], cairo.ImageSurface] | None = None
+    # Hands a selection picked out pixel by pixel, such as the magic wand's,
+    # to the canvas; None drops the selection.
+    select_pixels: Callable[[object], None] | None = None
 
     @property
     def color(self) -> Gdk.RGBA:
@@ -84,6 +87,18 @@ def draw_outline_marquee(cr: cairo.Context, outline, closed: bool = True) -> Non
         cr.line_to(*point)
     if closed:
         cr.close_path()
+    _stroke_marquee(cr)
+    cr.restore()
+
+
+def draw_edges_marquee(cr: cairo.Context, edges) -> None:
+    """The same dashes, along the border of a selection picked out pixel by pixel."""
+    if not edges:
+        return
+    cr.save()
+    for x1, y1, x2, y2 in edges:
+        cr.move_to(x1, y1)
+        cr.line_to(x2, y2)
     _stroke_marquee(cr)
     cr.restore()
 
