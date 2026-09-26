@@ -65,6 +65,9 @@ class Canvas(
         # A shape waiting to land is drawn afresh every frame, so a colour
         # picked now shows on it rather than only on the next shape.
         colors.connect("changed", lambda *_args: self._restyle_shape())
+        # A transparent selection leaves out the secondary colour, whichever it is now.
+        self._transparent_selection = False
+        colors.connect("changed", lambda *_args: self._transparent_selection and self._refresh_left_out())
         self._brush_size = 4
         self._fill_shapes = False
         self._outline_shapes = True

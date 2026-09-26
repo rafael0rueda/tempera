@@ -114,6 +114,8 @@ class SessionMixin:
         )
         if load_setting("pixel-grid") == "1":
             self.lookup_action("pixel-grid").change_state(GLib.Variant.new_boolean(True))
+        if load_setting("transparent-selection") == "1":
+            self.lookup_action("transparent-selection").change_state(GLib.Variant.new_boolean(True))
         if load_setting("layers-panel") == "1":
             self.show_layers_panel()
         self._last_jpeg_quality = _whole(load_setting("jpeg-quality"), 90, (1, 100))
@@ -146,6 +148,7 @@ class SessionMixin:
                 "airbrush-density": self.canvas.airbrush_density,
                 "pixel-grid": "1" if self.canvas.show_pixel_grid else "0",
                 "layers-panel": "1" if self._layers_strip.get_visible() else "0",
+                "transparent-selection": "1" if self.canvas.transparent_selection else "0",
                 "jpeg-quality": self._last_jpeg_quality,
                 "primary-color": self.colors.primary.to_string(),
                 "secondary-color": self.colors.secondary.to_string(),

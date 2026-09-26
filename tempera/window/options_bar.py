@@ -50,6 +50,8 @@ class ToolOptionsMixin:
         bar = Gtk.Box(spacing=6)
         bar.add_css_class("tempera-options-bar")
         self._options_bar = bar
+        # The chips on the Transparent toggles, in the colour they leave out.
+        self._left_out_chips: list[ColorChip] = []
 
         self._tool_label = Gtk.Label(xalign=0, margin_end=6)
         self._tool_label.add_css_class("heading")
@@ -161,7 +163,7 @@ class ToolOptionsMixin:
                 button.set_action_name("win.tool")
                 button.set_action_target_value(GLib.Variant.new_string(tool.id))
                 selection_shapes.append(button)
-        self._add_page("select", selection_shapes)
+        self._add_page("select", _row(selection_shapes, _bar_separator(), self._transparent_toggle()))
 
         self._wand_tolerance_scale, wand_value = self._option_scale(
             TOLERANCE_RANGE,
@@ -172,7 +174,16 @@ class ToolOptionsMixin:
             _("How far the selection spreads into colours near the one you clicked")
         )
         self._wand_tolerance_scale.update_property([Gtk.AccessibleProperty.LABEL], [_("Tolerance")])
-        self._add_page("wand", _row(_caption(_("Tolerance")), self._wand_tolerance_scale, wand_value))
+        self._add_page(
+            "wand",
+            _row(
+                _caption(_("Tolerance")),
+                self._wand_tolerance_scale,
+                wand_value,
+                _bar_separator(),
+                self._transparent_toggle(),
+            ),
+        )
 
         # The button names the typeface; the size is the one before it.
         self._font_label = Gtk.Label(label=font_without_size(self.canvas.font))
@@ -189,6 +200,7 @@ class ToolOptionsMixin:
         self._font_button.connect("clicked", self._choose_font)
         self._add_page("text", self._font_button)
 
+        self._sync_color_chips()
         self._sync_size_scale()
 
         # Scrolls sideways rather than hold the window wider than the screen,
@@ -268,9 +280,21 @@ class ToolOptionsMixin:
         unit = _("pt") if self.canvas.supports_font else _("px")
         self._size_value.set_label(_("{size} {unit}").format(size=size, unit=unit))
 
+    def _transparent_toggle(self) -> Gtk.ToggleButton:
+        """Transparent selection, for the options of each selection tool; they share one setting."""
+        chip = ColorChip(filled=True)
+        self._left_out_chips.append(chip)
+        button = self._option_toggle(
+            _("Transparent"), chip, _("Leave the secondary colour out of what is moved or pasted")
+        )
+        button.set_action_name("win.transparent-selection")
+        return button
+
     def _sync_color_chips(self) -> None:
         self._outline_chip.color = self.colors.primary
         self._fill_chip.color = self.colors.secondary
+        for chip in self._left_out_chips:
+            chip.color = self.colors.secondary
 
     def _sync_shape_options(self) -> None:
         """Show what the shape in hand will draw: a line is all outline, whatever is set."""

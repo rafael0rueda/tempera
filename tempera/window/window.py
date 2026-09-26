@@ -170,6 +170,12 @@ class TemperaWindow(
         shape_action.connect("change-state", self._unless_dragging(self._on_shape_changed))
         self.add_action(shape_action)
 
+        transparent_action = Gio.SimpleAction.new_stateful(
+            "transparent-selection", None, GLib.Variant.new_boolean(False)
+        )
+        transparent_action.connect("change-state", self._on_transparent_selection_changed)
+        self.add_action(transparent_action)
+
         grid_action = Gio.SimpleAction.new_stateful(
             "pixel-grid", None, GLib.Variant.new_boolean(False)
         )
@@ -227,6 +233,10 @@ class TemperaWindow(
         action.set_state(value)
         self.lookup_action("tool").change_state(GLib.Variant.new_string(SHAPES_TOOL_ID))
         self._sync_tool_options()
+
+    def _on_transparent_selection_changed(self, action, value: GLib.Variant) -> None:
+        action.set_state(value)
+        self.canvas.transparent_selection = value.get_boolean()
 
     def _on_pixel_grid_changed(self, action, value: GLib.Variant) -> None:
         action.set_state(value)

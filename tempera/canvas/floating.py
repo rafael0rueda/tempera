@@ -14,6 +14,7 @@ from ..clipboard import surface_from_texture
 from ..document import MAX_SIZE
 from ..file_io import load_surface_async
 from ..i18n import _
+from ..regions import without_color
 from ..text import TextBox
 
 # Breathing room between the typed text and its dashed outline.
@@ -43,6 +44,17 @@ class FloatingPaste:
     # committing can resample once instead of every frame of the drag.
     scale_x: float = 1.0
     scale_y: float = 1.0
+    # The pixels as they were lifted or pasted, before a transparent
+    # selection left a colour out of `surface`.
+    original: cairo.ImageSurface | None = None
+
+    def __post_init__(self) -> None:
+        if self.original is None:
+            self.original = self.surface
+
+    def leave_out(self, color: Gdk.RGBA | None) -> None:
+        """Make the pixels of one colour see-through, or with None bring them all back."""
+        self.surface = self.original if color is None else without_color(self.original, color)
 
     @property
     def width(self) -> int:
@@ -186,11 +198,35 @@ class FloatingMixin:
         # Whatever was selected is not what is about to hover over the canvas.
         self.set_selection(None)
         self._paste = FloatingPaste(surface, source=source, source_mask=source_mask)
+        self._paste.leave_out(self._left_out_color())
         self._paste.move_to(x, y)
         self.grab_focus()
         self._sync_content_size()
         self.queue_draw()
         self.emit("floating-changed")
+
+    # Transparent selection
+
+    @property
+    def transparent_selection(self) -> bool:
+        return self._transparent_selection
+
+    @transparent_selection.setter
+    def transparent_selection(self, value: bool) -> None:
+        self._transparent_selection = value
+        self._refresh_left_out()
+
+    def _left_out_color(self) -> Gdk.RGBA | None:
+        """The colour a transparent selection leaves out of what it moves or pastes:
+        the secondary, as in Paint, where it is the background colour."""
+        return self.colors.secondary if self._transparent_selection else None
+
+    def _refresh_left_out(self) -> None:
+        """Show a floating paste with the colour left out as it is now."""
+        if self._paste is None:
+            return
+        self._paste.leave_out(self._left_out_color())
+        self.queue_draw()
 
     def commit_paste(self) -> bool:
         """Stamp the floating image into the document, growing the canvas to fit."""
