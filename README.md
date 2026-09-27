@@ -4,20 +4,28 @@ A straightforward raster paint application for Fedora / GNOME, in the spirit of 
 classic Windows Paint. Built with GTK4 and libadwaita, it follows the system light/dark
 preference and accent colour automatically, and works entirely offline.
 
-![Tempera's main window: the brush's options in a bar under the header, the tools on the left with the brush selected, a painted landscape with a house, a tree and the sun on the canvas, and the colour palette with the recently used colours in a column on the right](data/screenshots/main-window.png)
+![Tempera's main window: the brush's options in a bar under the header, the tools on the left with the brush selected, a painted meadow with a house, a tree and the sun on the canvas, the colour palette in a column beside it, and the layers panel on the right listing the picture's five layers](data/screenshots/main-window.png)
 
 ## Features
 
+- Layers: add, duplicate, reorder, hide, fade, merge and flatten them, kept in
+  OpenRaster files that GIMP and Krita open too, and exported as PNG or JPEG copies
 - Pencil, brush, airbrush and eraser, which can rub back to transparency
 - Nine shapes — line, curve, arrow, rectangle, rounded rectangle, ellipse, triangle, star
-  and polygon — filled or outlined, and resized or moved by their grips before they land
-- Text in any installed font, flood fill with a tolerance, and a colour picker
-- Colours of any opacity, with the ones painted with lately kept beside the palette
-- Rectangular and free-form (lasso) selection to move, copy, cut, stretch or crop to
+  and polygon — filled or outlined, solid, dashed or dotted, with smooth or crisp edges,
+  and resized or moved by their grips before they land
+- Text in any installed font: bold, italic, underlined or struck through, aligned, and
+  on a box of its own if wanted
+- Flood fill with a tolerance, and a colour picker for the canvas or anywhere on screen
+- A colour editor with hex values, opacity and colours kept for later, and the colours
+  painted with lately beside the palette
+- Rectangle, free-form and magic wand selection to move, copy, cut, stretch, turn, skew
+  or crop to, with the background colour left out if wanted
 - Paste screenshots and drop images onto the canvas; resize, rotate or flip the image
-- Zoom from 10% to 800% with crisp pixels and an optional pixel grid
+- Zoom from 10% to 800%, drawn by the graphics card, with crisp pixels and an optional
+  pixel grid
 - Printing, fitted to the page or at actual size, with a preview
-- Unsaved work kept safe and offered back after a crash
+- Unsaved work, layers and all, kept safe and offered back after a crash
 - Keyboard shortcuts you can change, and an interface size up to 200%
 
 The [user guide](USER_GUIDE.md) explains every tool, option and shortcut.
@@ -28,7 +36,7 @@ Each [release](https://github.com/rafael0rueda/tempera/releases) has a Flatpak b
 attached. Download `Tempera-<version>-x86_64.flatpak` and install it for your user:
 
 ```
-flatpak install --user Tempera-1.1.0-x86_64.flatpak
+flatpak install --user Tempera-2.0.0-x86_64.flatpak
 ```
 
 It runs on the GNOME 50 runtime, which Flatpak offers to fetch from Flathub if you do

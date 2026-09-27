@@ -15,17 +15,19 @@
     </p>
     <p>Features:</p>
     <ul>
+      <li>Layers to paint on apart: add, duplicate, reorder, hide, fade, merge and flatten them</li>
+      <li>OpenRaster files that keep the layers, which GIMP and Krita open too, and Export As for a PNG or JPEG copy</li>
       <li>Pencil, brush, airbrush and eraser, which can rub back to transparency</li>
-      <li>Nine shapes — line, curve, arrow, rectangle, rounded rectangle, ellipse, triangle, star and polygon — filled or outlined, with Shift for squares, circles and 45° lines, and grips to resize or move each one before it lands</li>
-      <li>Text in any font installed on the system</li>
-      <li>Flood fill with an adjustable tolerance, and a colour picker</li>
-      <li>Colours of any opacity, with the ones painted with lately kept beside the palette</li>
-      <li>Rectangular and free-form selection to move, copy, cut, stretch or crop to</li>
+      <li>Nine shapes — line, curve, arrow, rectangle, rounded rectangle, ellipse, triangle, star and polygon — filled or outlined, solid, dashed or dotted, with smooth or crisp edges, and grips to resize or move each one before it lands</li>
+      <li>Text in any font installed on the system: bold, italic, underlined or struck through, aligned, and on a box if wanted</li>
+      <li>Flood fill with an adjustable tolerance, and a colour picker for the canvas or anywhere on screen</li>
+      <li>A colour editor with hex values, opacity and colours kept for later, and the colours painted with lately beside the palette</li>
+      <li>Rectangle, free-form and magic wand selection to move, copy, cut, stretch, turn, skew or crop to, leaving the background colour out if wanted</li>
       <li>Paste screenshots and drop images straight onto the canvas</li>
       <li>Resize the picture, or the canvas around it, and rotate or flip it</li>
-      <li>Zoom from 10% to 800% or to fit the window, with crisp pixels and an optional pixel grid when zoomed in; pan with the middle mouse button or pinch on a touchpad</li>
+      <li>Zoom from 10% to 800% or to fit the window, drawn by the graphics card, with crisp pixels and an optional pixel grid when zoomed in; pan with the middle mouse button or pinch on a touchpad</li>
       <li>Undo and redo history, and a list of recently opened files</li>
-      <li>Unsaved work is kept safe and offered back after a crash</li>
+      <li>Unsaved work, layers and all, is kept safe and offered back after a crash</li>
       <li>Print, fitted to the page or at actual size, with a preview</li>
       <li>A bigger interface, from 100% to 200%, for text, buttons and icons alike</li>
       <li>Keyboard shortcuts you can change to suit you, and every action reachable from the keyboard</li>
@@ -63,16 +65,20 @@
   </supports>
   <screenshots>
     <screenshot type="default">
-      <caption>Painting a landscape with the brush</caption>
-      <image type="source" width="1120" height="800">https://raw.githubusercontent.com/rafael0rueda/tempera/v1.3.0/data/screenshots/main-window.png</image>
+      <caption>A meadow painted on five layers, with the layers panel open</caption>
+      <image type="source" width="1280" height="800">https://raw.githubusercontent.com/rafael0rueda/tempera/v2.0.0/data/screenshots/main-window.png</image>
     </screenshot>
     <screenshot>
-      <caption>The dark style, with a selection drawn by hand with Free Select</caption>
-      <image type="source" width="1120" height="800">https://raw.githubusercontent.com/rafael0rueda/tempera/v1.3.0/data/screenshots/dark-style.png</image>
+      <caption>The dark style, turning the sun on a layer of its own by its grip</caption>
+      <image type="source" width="1280" height="800">https://raw.githubusercontent.com/rafael0rueda/tempera/v2.0.0/data/screenshots/dark-style.png</image>
     </screenshot>
     <screenshot>
-      <caption>A filled star waiting with grips to resize it, at a bigger interface size</caption>
-      <image type="source" width="1120" height="800">https://raw.githubusercontent.com/rafael0rueda/tempera/v1.3.0/data/screenshots/interface-size.png</image>
+      <caption>A dashed star waiting with grips to resize it, at a bigger interface size</caption>
+      <image type="source" width="1280" height="800">https://raw.githubusercontent.com/rafael0rueda/tempera/v2.0.0/data/screenshots/interface-size.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>The colour editor, with colours kept for later</caption>
+      <image type="source" width="1280" height="800">https://raw.githubusercontent.com/rafael0rueda/tempera/v2.0.0/data/screenshots/color-editor.png</image>
     </screenshot>
   </screenshots>
   <categories>
@@ -80,6 +86,32 @@
     <category>RasterGraphics</category>
   </categories>
   <releases>
+    <release version="2.0.0" date="2026-09-27">
+      <description>
+        <p>Tempera 2 paints in layers, and draws them with the graphics card.</p>
+        <p>New features:</p>
+        <ul>
+          <li>Layers: a panel (Ctrl+L) lists them with a picture of each, to add, duplicate, reorder by dragging, hide, fade, rename, merge down or flatten, each a step to undo</li>
+          <li>OpenRaster (.ora) files open and save with their layers, as GIMP and Krita do; other formats get the picture as it shows, and say so</li>
+          <li>Export As (Shift+Ctrl+E) writes a PNG, JPEG or other copy while the picture keeps its own file</li>
+          <li>The magic wand (M) selects the pixels joined to the one clicked through near enough colours</li>
+          <li>A selection or a paste has a grip to turn it by, and Ctrl on a side grip skews it</li>
+          <li>Transparent selection leaves the background colour out of what is moved or pasted</li>
+          <li>Text can be bold, italic, underlined or struck through, aligned left, centre or right, and put on a box</li>
+          <li>Shapes can be outlined in dashes or dots, arrows can have a head at both ends, and edges can be crisp for pixel art</li>
+          <li>A new colour editor, with hex values, opacity and up to sixteen colours kept for later</li>
+          <li>A colour can be picked from anywhere on the screen, other windows included</li>
+          <li>The size beside the slider can be typed in, or picked from the usual sizes</li>
+        </ul>
+        <p>Improvements:</p>
+        <ul>
+          <li>Painting on a big picture is smooth at any zoom: the image is drawn by the graphics card, and a stroke only redraws what it touched</li>
+          <li>Filling a big picture is many times faster, and never freezes the window</li>
+          <li>A copy kept for crash recovery keeps the layers</li>
+          <li>Letters typed into a field, such as a hex colour or a layer's name, no longer switch tools</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.3.0" date="2026-09-25">
       <description>
         <p>A new layout that follows GNOME's design, with less clutter around the picture.</p>
