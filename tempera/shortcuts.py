@@ -146,6 +146,15 @@ SHORTCUT_GROUPS: list[tuple[str, list[Shortcut]]] = [
         [
             Shortcut(f"win.shape::{shape.id}", shape.label, (SHAPE_KEYS[shape.id],))
             for shape in SHAPE_CLASSES
+        ]
+        + [
+            Shortcut("win.line-style::solid", _("Solid Outline"), ()),
+            Shortcut("win.line-style::dashed", _("Dashed Outline"), ()),
+            Shortcut("win.line-style::dotted", _("Dotted Outline"), ()),
+            Shortcut("win.arrow-ends::end", _("Arrowhead at the End"), ()),
+            Shortcut("win.arrow-ends::both", _("Arrowheads at Both Ends"), ()),
+            Shortcut("win.shape-edges::smooth", _("Smooth Edges"), ()),
+            Shortcut("win.shape-edges::crisp", _("Crisp Edges"), ()),
         ],
     ),
     (

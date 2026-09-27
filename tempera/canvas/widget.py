@@ -73,6 +73,10 @@ class Canvas(
         self._brush_size = 4
         self._fill_shapes = False
         self._outline_shapes = True
+        # How shapes are drawn: their outline, their arrowheads, their edges.
+        self._line_style = "solid"
+        self._arrow_ends = "end"
+        self._smooth_shapes = True
         self.erase_to_transparency = False
         self.fill_tolerance = DEFAULT_TOLERANCE
         self.wand_tolerance = DEFAULT_WAND_TOLERANCE
@@ -309,6 +313,33 @@ class Canvas(
     @outline_shapes.setter
     def outline_shapes(self, value: bool) -> None:
         self._outline_shapes = value
+        self._restyle_shape()
+
+    @property
+    def line_style(self) -> str:
+        return self._line_style
+
+    @line_style.setter
+    def line_style(self, value: str) -> None:
+        self._line_style = value
+        self._restyle_shape()
+
+    @property
+    def arrow_ends(self) -> str:
+        return self._arrow_ends
+
+    @arrow_ends.setter
+    def arrow_ends(self, value: str) -> None:
+        self._arrow_ends = value
+        self._restyle_shape()
+
+    @property
+    def smooth_shapes(self) -> bool:
+        return self._smooth_shapes
+
+    @smooth_shapes.setter
+    def smooth_shapes(self, value: bool) -> None:
+        self._smooth_shapes = value
         self._restyle_shape()
 
     def _restyle_shape(self) -> None:

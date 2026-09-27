@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <path class="foreground-stroke transparent-fill" d="M5 8h6" fill="none" stroke="#222222" stroke-width="1.5" stroke-linecap="round"/>
+  <path class="foreground-fill" d="M14.5 8 10 4.75v6.5z M1.5 8 6 4.75v6.5z" fill="#222222"/>
+</svg>

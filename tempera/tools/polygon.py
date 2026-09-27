@@ -8,7 +8,7 @@ import math
 import cairo
 
 from ..i18n import _
-from .base import Tool, distance_to_segment, paint_shape, set_source, snap_45
+from .base import Tool, distance_to_segment, paint_shape, prepare, set_source, snap_45, stroke_outline
 
 
 class PolygonTool(Tool):
@@ -99,6 +99,7 @@ class PolygonTool(Tool):
         points = list(self._points)
         if self._hover is not None and not self._dragging:
             points.append(self._hover)
+        prepare(cr, ctx)
         cr.set_line_width(ctx.size)
         cr.set_line_join(cairo.LINE_JOIN_MITER)
         cr.set_line_cap(cairo.LINE_CAP_ROUND)
@@ -109,11 +110,14 @@ class PolygonTool(Tool):
         if len(points) == 1:
             # Cairo draws a round-capped dot for a path that goes nowhere.
             cr.close_path()
-        cr.stroke()
+            cr.stroke()
+        else:
+            stroke_outline(cr, ctx)
 
     @staticmethod
     def _paint(cr: cairo.Context, ctx, points: list[tuple[float, float]]) -> None:
         """The closed shape, or the single side that two corners make."""
+        prepare(cr, ctx)
         cr.move_to(*points[0])
         for point in points[1:]:
             cr.line_to(*point)
@@ -122,7 +126,7 @@ class PolygonTool(Tool):
             cr.set_line_width(ctx.size)
             cr.set_line_cap(cairo.LINE_CAP_ROUND)
             set_source(cr, ctx.color)
-            cr.stroke()
+            stroke_outline(cr, ctx)
             return
         cr.close_path()
         paint_shape(cr, ctx)

@@ -20,6 +20,7 @@ from ..screen_color import pick_screen_color
 from ..shortcuts_dialog import ShortcutsDialog
 from ..text import ALIGNMENTS, TEXT_SWITCHES
 from ..tools import DEFAULT_SHAPE, SHAPE_IDS, SHAPES_TOOL_ID
+from ..tools.base import ARROW_ENDS, LINE_STYLES
 from .edit import EditMixin
 from .files import FilesMixin
 from .header import HeaderMixin
@@ -49,6 +50,10 @@ IMAGE_ACTIONS = {
     "flip-horizontal",
     "flip-vertical",
 }
+
+
+# Shapes' edges: smooth, or crisp for pixel art.
+SHAPE_EDGES = ("smooth", "crisp")
 
 
 class TemperaWindow(
@@ -186,6 +191,18 @@ class TemperaWindow(
         align.connect("change-state", self._on_text_align_changed)
         self.add_action(align)
 
+        # How shapes are drawn, each a choice the options bar shows as a row of buttons.
+        for name, attribute, values, default in (
+            ("line-style", "line_style", LINE_STYLES, "solid"),
+            ("arrow-ends", "arrow_ends", ARROW_ENDS, "end"),
+            ("shape-edges", "shape_edges", SHAPE_EDGES, "smooth"),
+        ):
+            choice = Gio.SimpleAction.new_stateful(
+                name, GLib.VariantType.new("s"), GLib.Variant.new_string(default)
+            )
+            choice.connect("change-state", self._on_shape_style_changed, attribute, values)
+            self.add_action(choice)
+
         transparent_action = Gio.SimpleAction.new_stateful(
             "transparent-selection", None, GLib.Variant.new_boolean(False)
         )
@@ -259,6 +276,15 @@ class TemperaWindow(
             return
         action.set_state(value)
         self.canvas.text_style = replace(self.canvas.text_style, align=value.get_string())
+
+    def _on_shape_style_changed(self, action, value: GLib.Variant, attribute: str, values) -> None:
+        if value.get_string() not in values:
+            return
+        action.set_state(value)
+        if attribute == "shape_edges":
+            self.canvas.smooth_shapes = value.get_string() == "smooth"
+        else:
+            setattr(self.canvas, attribute, value.get_string())
 
     def _on_transparent_selection_changed(self, action, value: GLib.Variant) -> None:
         action.set_state(value)

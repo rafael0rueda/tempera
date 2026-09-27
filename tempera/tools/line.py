@@ -4,7 +4,7 @@
 import cairo
 
 from ..i18n import _
-from .base import ShapeTool, set_source, snap_45
+from .base import ShapeTool, set_source, snap_45, stroke_outline
 
 
 class LineTool(ShapeTool):
@@ -21,7 +21,7 @@ class LineTool(ShapeTool):
         set_source(cr, ctx.color)
         cr.move_to(*start)
         cr.line_to(*end)
-        cr.stroke()
+        stroke_outline(cr, ctx)
 
     def _constrain(self, point):
         """Snap the drag to the nearest 45° angle, keeping its length."""

@@ -50,6 +50,13 @@ class ToolContext:
     # One rectangle of the picture as it shows, every visible layer blended,
     # as (x, y, width, height). Without it, the current layer stands in.
     picture: Callable[[int, int, int, int], cairo.ImageSurface] | None = None
+    # How shapes are outlined: "solid", "dashed" or "dotted".
+    line_style: str = "solid"
+    # Which ends of an arrow have a head: "end", where the drag finished, or "both".
+    arrow_ends: str = "end"
+    # Whether shapes have smooth edges; without, every pixel is in or out,
+    # for crisp pixel art.
+    antialias: bool = True
     # Hands a selection picked out pixel by pixel, such as the magic wand's,
     # to the canvas; None drops the selection.
     select_pixels: Callable[[object], None] | None = None
@@ -392,6 +399,7 @@ class ShapeTool(Tool):
 
     def draw_preview(self, cr, ctx):
         if self._start is not None and self._current is not None:
+            prepare(cr, ctx)
             self.render(cr, ctx, self._start, self._current)
 
     def finish(self, ctx):
@@ -400,6 +408,7 @@ class ShapeTool(Tool):
         if start is None or end is None:
             return
         cr = cairo.Context(ctx.surface)
+        prepare(cr, ctx)
         self.render(cr, ctx, start, end)
 
     def cancel(self):
@@ -482,6 +491,35 @@ class ShapeTool(Tool):
         paint_shape(cr, ctx)
 
 
+LINE_STYLES = ("solid", "dashed", "dotted")
+ARROW_ENDS = ("end", "both")
+
+
+def prepare(cr: cairo.Context, ctx: ToolContext) -> None:
+    """Set up to draw a shape: with or without smooth edges."""
+    cr.set_antialias(cairo.ANTIALIAS_DEFAULT if ctx.antialias else cairo.ANTIALIAS_NONE)
+
+
+def stroke_outline(cr: cairo.Context, ctx: ToolContext) -> None:
+    """Stroke the path as the outline style asks: whole, in dashes, or in dots.
+
+    The dashes and gaps are measured in widths of the line, so a thick line
+    has long dashes and a thin one short. Dots are dashes of no length with
+    round ends, one line width across and two apart.
+    """
+    size = ctx.size
+    if ctx.line_style == "dashed":
+        # Square ends, so the gaps are as long as they say.
+        cr.set_line_cap(cairo.LINE_CAP_BUTT)
+        cr.set_dash([3 * size, 2 * size])
+    elif ctx.line_style == "dotted":
+        cr.set_line_cap(cairo.LINE_CAP_ROUND)
+        cr.set_line_join(cairo.LINE_JOIN_ROUND)
+        cr.set_dash([0, 2 * size])
+    cr.stroke()
+    cr.set_dash([])
+
+
 def paint_shape(cr: cairo.Context, ctx: ToolContext) -> None:
     """Fill the path with the alternate color when filling is on, then stroke its outline.
 
@@ -495,6 +533,6 @@ def paint_shape(cr: cairo.Context, ctx: ToolContext) -> None:
         cr.fill_preserve()
     if ctx.outline_shapes or not ctx.fill_shapes:
         set_source(cr, ctx.color)
-        cr.stroke()
+        stroke_outline(cr, ctx)
     else:
         cr.new_path()

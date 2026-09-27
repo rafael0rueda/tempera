@@ -126,7 +126,44 @@ class ToolOptionsMixin:
         )
         self._fill_toggle.connect("toggled", self._on_fill_toggled)
         self._syncing_shape_options = False
-        self._add_page("shape", _row(self._outline_toggle, self._fill_toggle))
+        # The outline as dashes or dots, arrowheads at one end or both, and
+        # smooth edges or crisp ones for pixel art.
+        line_styles = self._choice_row(
+            "win.line-style",
+            (
+                ("solid", "tempera-line-solid-symbolic", "Solid Outline"),
+                ("dashed", "tempera-line-dashed-symbolic", "Dashed Outline"),
+                ("dotted", "tempera-line-dotted-symbolic", "Dotted Outline"),
+            ),
+        )
+        self._arrow_ends = self._choice_row(
+            "win.arrow-ends",
+            (
+                ("end", "tempera-arrow-end-symbolic", "Arrowhead at the End"),
+                ("both", "tempera-arrow-both-symbolic", "Arrowheads at Both Ends"),
+            ),
+        )
+        edges = self._choice_row(
+            "win.shape-edges",
+            (
+                ("smooth", "tempera-smooth-edges-symbolic", "Smooth Edges"),
+                ("crisp", "tempera-crisp-edges-symbolic", "Crisp Edges"),
+            ),
+        )
+        self._arrow_ends_separator = _bar_separator()
+        self._add_page(
+            "shape",
+            _row(
+                self._outline_toggle,
+                self._fill_toggle,
+                _bar_separator(),
+                line_styles,
+                self._arrow_ends_separator,
+                self._arrow_ends,
+                _bar_separator(),
+                edges,
+            ),
+        )
         self.colors.connect("changed", lambda *_args: self._sync_color_chips())
 
         self._erase_check = Gtk.CheckButton(label=_("Erase to nothing"))
@@ -280,6 +317,19 @@ class ToolOptionsMixin:
         page.append(options)
         self._tool_options.add_named(page, name)
 
+    def _choice_row(self, action: str, choices) -> Gtk.Box:
+        """Linked buttons, one for each value of a stateful action; the one it holds is pressed."""
+        row = Gtk.Box(valign=Gtk.Align.CENTER)
+        row.add_css_class("linked")
+        for value, icon, text in choices:
+            button = Gtk.ToggleButton(icon_name=icon)
+            button.add_css_class("tempera-option-toggle")
+            self._add_shortcut_tooltip(button, text, f"{action}::{value}")
+            button.set_action_name(action)
+            button.set_action_target_value(GLib.Variant.new_string(value))
+            row.append(button)
+        return row
+
     @staticmethod
     def _option_toggle(text: str, chip: Gtk.Widget, tooltip: str) -> Gtk.ToggleButton:
         content = Gtk.Box(spacing=8)
@@ -366,6 +416,10 @@ class ToolOptionsMixin:
         self._outline_toggle.set_sensitive(fillable)
         self._fill_toggle.set_sensitive(fillable)
         self._syncing_shape_options = False
+        # Only an arrow has heads.
+        arrow = canvas.shapes.shape.id == "arrow"
+        self._arrow_ends.set_visible(arrow)
+        self._arrow_ends_separator.set_visible(arrow)
 
     def _on_outline_toggled(self, button: Gtk.ToggleButton) -> None:
         if self._syncing_shape_options:

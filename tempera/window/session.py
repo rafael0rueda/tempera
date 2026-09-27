@@ -122,6 +122,10 @@ class SessionMixin:
             self.lookup_action("text-align").change_state(
                 GLib.Variant.new_string(load_setting("text-align"))
             )
+        for name in ("line-style", "arrow-ends", "shape-edges"):
+            value = load_setting(name)
+            if value:
+                self.lookup_action(name).change_state(GLib.Variant.new_string(value))
         if load_setting("transparent-selection") == "1":
             self.lookup_action("transparent-selection").change_state(GLib.Variant.new_boolean(True))
         if load_setting("layers-panel") == "1":
@@ -159,6 +163,9 @@ class SessionMixin:
                 "pixel-grid": "1" if self.canvas.show_pixel_grid else "0",
                 "layers-panel": "1" if self._layers_strip.get_visible() else "0",
                 "transparent-selection": "1" if self.canvas.transparent_selection else "0",
+                "line-style": self.canvas.line_style,
+                "arrow-ends": self.canvas.arrow_ends,
+                "shape-edges": "smooth" if self.canvas.smooth_shapes else "crisp",
                 "text-align": self.canvas.text_style.align,
                 **{
                     f"text-{name}": "1" if getattr(self.canvas.text_style, name) else "0"

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <g fill="#222222">
+    <circle class="foreground-fill" cx="2.75" cy="8" r="1.1"/>
+    <circle class="foreground-fill" cx="6.25" cy="8" r="1.1"/>
+    <circle class="foreground-fill" cx="9.75" cy="8" r="1.1"/>
+    <circle class="foreground-fill" cx="13.25" cy="8" r="1.1"/>
+  </g>
+</svg>

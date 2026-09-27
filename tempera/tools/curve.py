@@ -6,7 +6,7 @@ from __future__ import annotations
 import cairo
 
 from ..i18n import _
-from .base import Tool, distance_to_segment, set_source, snap_45
+from .base import Tool, distance_to_segment, prepare, set_source, snap_45, stroke_outline
 
 # A curve takes its line and then this many bends before it lands.
 BENDS = 2
@@ -76,6 +76,7 @@ class CurveTool(Tool):
             self._pending = True
 
     def _path(self, cr: cairo.Context, ctx) -> None:
+        prepare(cr, ctx)
         cr.set_line_width(ctx.size)
         cr.set_line_cap(cairo.LINE_CAP_ROUND)
         set_source(cr, ctx.color)
@@ -89,13 +90,13 @@ class CurveTool(Tool):
         if self._start is None:
             return
         self._path(cr, ctx)
-        cr.stroke()
+        stroke_outline(cr, ctx)
 
     def finish(self, ctx):
         if self._start is not None:
             cr = cairo.Context(ctx.surface)
             self._path(cr, ctx)
-            cr.stroke()
+            stroke_outline(cr, ctx)
         self.cancel()
 
     def cancel(self):
