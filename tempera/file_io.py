@@ -256,6 +256,12 @@ def save_as_name(file: Gio.File | None, layered: bool = False) -> str:
     return os.path.splitext(name)[0] + DEFAULT_EXTENSION
 
 
+def export_name(file: Gio.File | None) -> str:
+    """The name Export As suggests: the picture's own, as PNG."""
+    name = file.get_basename() if file is not None else _("Untitled") + DEFAULT_EXTENSION
+    return os.path.splitext(name)[0] + DEFAULT_EXTENSION
+
+
 def format_for(file: Gio.File) -> str | None:
     """The format a file's extension asks for, or None if Tempera cannot write it."""
     # The name rather than the path, which a network location does not have.
@@ -377,8 +383,13 @@ def save_document_async(
     on_saved: Callable[[], None],
     on_error: Callable[[str], None],
     quality: int = 90,
+    copy: bool = False,
 ) -> None:
-    """Encode in the background and write asynchronously, marking what was written as saved."""
+    """Encode in the background and write asynchronously, marking what was written as saved.
+
+    As a `copy`, as an export writes, the picture keeps its own file, and
+    whether it has changes that are not saved.
+    """
     try:
         picture, image_format = image_to_save(document, file)
     except GLib.Error as error:
@@ -392,8 +403,9 @@ def save_document_async(
         except GLib.Error as error:
             on_error(error.message)
             return
-        document.file = file
-        document.mark_saved(depth)
+        if not copy:
+            document.file = file
+            document.mark_saved(depth)
         on_saved()
 
     def done(result):

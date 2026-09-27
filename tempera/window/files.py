@@ -12,6 +12,7 @@ from ..document import Document
 from ..i18n import _
 from ..file_io import (
     LAYERED_FORMAT,
+    export_name,
     format_for,
     image_filters,
     load_document_async,
@@ -190,6 +191,67 @@ class FilesMixin:
 
         dialog.save(self, None, on_done)
 
+    def _export_as(self) -> None:
+        """Write a copy, in any format, of the picture as it shows.
+
+        Unlike Save As, the picture keeps its own file, the one Ctrl+S goes
+        on saving to, and its layers: a copy as a PNG or a JPEG can be made
+        of a picture kept as OpenRaster, as often as it changes.
+        """
+        if self._busy:
+            return
+        self.canvas.commit_floating()
+        document = self.canvas.document
+        dialog = Gtk.FileDialog(title=_("Export Image"), filters=image_filters())
+        folder, name = self._export_start(document)
+        if folder is not None:
+            dialog.set_initial_folder(folder)
+        dialog.set_initial_name(name)
+
+        def on_done(source, result):
+            try:
+                chosen = source.save_finish(result)
+            except GLib.Error:
+                return
+            file = with_default_extension(chosen)
+            if not file.equal(chosen) and file.query_exists(None):
+                self._confirm_replace(file, lambda: self._export(file))
+            else:
+                self._export(file)
+
+        dialog.save(self, None, on_done)
+
+    def _export_start(self, document: Document) -> tuple[Gio.File | None, str]:
+        """Where Export As starts: where this picture was last exported to, or else
+        beside its own file, named after it."""
+        last = self._last_export
+        if last is not None and last[0] is document:
+            return last[1].get_parent(), last[1].get_basename()
+        folder = document.file.get_parent() if document.file is not None else None
+        return folder, export_name(document.file)
+
+    def _export(self, file: Gio.File) -> None:
+        if format_for(file) == "jpeg":
+            self._prompt_jpeg_quality(lambda quality: self._export_now(file, quality), _("Export"))
+        else:
+            self._export_now(file, None)
+
+    def _export_now(self, file: Gio.File, quality: int | None) -> None:
+        self._set_busy(True)
+        document = self.canvas.document
+
+        def on_exported() -> None:
+            self._set_busy(False)
+            self._last_export = (document, file)
+            self.show_toast(_("Exported {name}").format(name=file.get_basename()))
+
+        def on_error(message: str) -> None:
+            self._set_busy(False)
+            self.show_toast(_("Could not export image: {message}").format(message=message))
+
+        arguments = {} if quality is None else {"quality": quality}
+        save_document_async(document, file, on_exported, on_error, copy=True, **arguments)
+
     def _confirm_replace(self, file: Gio.File, proceed) -> None:
         dialog = Adw.AlertDialog(
             heading=_("Replace “{name}”?").format(name=file.get_basename()),
@@ -214,7 +276,7 @@ class FilesMixin:
         else:
             self._write_now(file, then, None)
 
-    def _prompt_jpeg_quality(self, on_accept) -> None:
+    def _prompt_jpeg_quality(self, on_accept, accept_label: str | None = None) -> None:
         scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 1, 100, 1)
         scale.set_value(self._last_jpeg_quality)
         scale.set_draw_value(True)
@@ -227,7 +289,7 @@ class FilesMixin:
         )
         dialog.set_extra_child(scale)
         dialog.add_response("cancel", _("Cancel"))
-        dialog.add_response("save", _("Save"))
+        dialog.add_response("save", accept_label or _("Save"))
         dialog.set_response_appearance("save", Adw.ResponseAppearance.SUGGESTED)
         dialog.set_default_response("save")
         dialog.set_close_response("cancel")

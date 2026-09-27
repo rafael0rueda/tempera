@@ -65,6 +65,7 @@ SHORTCUT_GROUPS: list[tuple[str, list[Shortcut]]] = [
             Shortcut("win.open", _("Open Image"), ("<Control>o",)),
             Shortcut("win.save", _("Save"), ("<Control>s",)),
             Shortcut("win.save-as", _("Save As"), ("<Control><Shift>s",)),
+            Shortcut("win.export-as", _("Export As"), ("<Control><Shift>e",)),
             Shortcut("win.print", _("Print"), ("<Control>p",)),
         ],
     ),

@@ -101,6 +101,8 @@ class TemperaWindow(
         self._last_jpeg_quality = 90
         # The picture already told that saving it as PNG or JPEG merges its layers.
         self._told_of_merging: Document | None = None
+        # The picture last exported, and where to, for the next export to start from.
+        self._last_export: tuple[Document, Gio.File] | None = None
 
         self._title = Adw.WindowTitle(title=APP_NAME)
         self.toasts = Adw.ToastOverlay()
@@ -136,6 +138,7 @@ class TemperaWindow(
             "open": self._action_open,
             "save": lambda *_args: self._save(),
             "save-as": lambda *_args: self._save_as(),
+            "export-as": lambda *_args: self._export_as(),
             "print": lambda *_args: self._print(),
             "undo": self._action_undo,
             "redo": lambda *_args: self.canvas.document.redo(),

@@ -72,6 +72,7 @@ class HeaderMixin:
         file_section = Gio.Menu()
         file_section.append_submenu(_("Recent Files"), self._recent_menu)
         file_section.append(_("Save As…"), "win.save-as")
+        file_section.append(_("Export As…"), "win.export-as")
         file_section.append(_("Print…"), "win.print")
         menu.append_section(None, file_section)
         app_section = Gio.Menu()
