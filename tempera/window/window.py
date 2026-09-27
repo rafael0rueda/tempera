@@ -127,6 +127,8 @@ class TemperaWindow(
         self._watch_document()
         self._refresh_recent_menu()
         self.connect("close-request", self._on_close_request)
+        # Typing into a field, as into the canvas, needs the one-key shortcuts out of the way.
+        self.connect("notify::focus-widget", lambda *_args: self._sync_typing_accels())
 
     def _install_actions(self) -> None:
         simple_actions = {
@@ -361,9 +363,10 @@ class TemperaWindow(
 
     def _sync_typing_accels(self) -> None:
         """Give the one-key shortcuts back and forth as a text box comes and goes."""
-        if self.canvas.is_typing == self._typing:
+        typing = shortcuts.is_typing_in(self)
+        if typing == self._typing:
             return
-        self._typing = self.canvas.is_typing
+        self._typing = typing
         shortcuts.apply_accels(self.get_application())
 
     def _add_shortcut_tooltip(self, widget: Gtk.Widget, text: str, action: str) -> None:

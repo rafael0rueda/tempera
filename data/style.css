@@ -159,14 +159,6 @@ windowtitle .subtitle {
   font-weight: normal;
 }
 
-/* A value shown in a box of its own, like the mock's "13 px". */
-.tempera-option-value {
-  min-width: 56px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  background-color: alpha(currentColor, 0.1);
-}
-
 /* The button rows in the main menu: rotate and flip, and zoom. */
 .tempera-menu-row {
   min-width: 276px;

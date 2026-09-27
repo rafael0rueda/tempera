@@ -586,11 +586,12 @@ def test_the_options_bar_names_the_tool_and_shows_a_size_only_where_one_applies(
     use("brush")
     assert window._tool_label.get_label() == "Brush"
     assert window._size_section.get_visible()
-    assert window._size_value.get_label() == f"{window.canvas.brush_size} px"
+    assert window._size_entry.get_text() == str(window.canvas.brush_size)
+    assert window._size_unit.get_label() == "px"
     assert not window._shape_picker.get_visible()
 
     use("text")
-    assert window._size_value.get_label().endswith(" pt")
+    assert window._size_unit.get_label() == "pt"
 
     use("fill")
     assert not window._size_section.get_visible()

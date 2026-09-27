@@ -366,16 +366,24 @@ def reset(application: Gtk.Application, action: str | None = None) -> None:
 # Applying them
 
 
+def is_typing_in(window: Gtk.Window) -> bool:
+    """Whether a window is taking typed text: into a text box on the canvas, or
+    into a field, such as a colour's hex value or a layer's name."""
+    if getattr(getattr(window, "canvas", None), "is_typing", False):
+        return True
+    # The part of an entry or a spin button that takes the keys.
+    return isinstance(window.get_focus(), (Gtk.Text, Gtk.TextView))
+
+
 def apply_accels(application: Gtk.Application) -> None:
     """Register every shortcut with the application.
 
-    Bare keys are left out while any window is typing into a text box, so that
-    typing an "s" does not switch to the select tool.
+    Bare keys are left out while any window is taking typed text, so that
+    typing an "s" does not switch to the select tool. GTK hands a window's
+    shortcuts the keys before the field with the focus, so they would
+    otherwise never reach it.
     """
-    typing = any(
-        getattr(getattr(window, "canvas", None), "is_typing", False)
-        for window in application.get_windows()
-    )
+    typing = any(is_typing_in(window) for window in application.get_windows())
     overrides = _overrides()
     for action in SHORTCUTS:
         keys = [] if _suspended else keys_for(action, overrides)

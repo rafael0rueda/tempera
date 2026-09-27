@@ -21,6 +21,10 @@ from ..tools import (
 
 # The one size slider serves the brush and, with the text tool up, the font.
 BRUSH_SIZE_RANGE = (1, 64)
+# The sizes offered beside the size, as a word processor offers them for
+# text, and in steps that grow with the brush for the tools that paint.
+FONT_SIZE_PRESETS = (8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 60, 72, 96, 120, 144, 200)
+BRUSH_SIZE_PRESETS = (1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24, 32, 40, 48, 64)
 # 0 fills only the exact colour clicked; the top end spreads across most shades.
 TOLERANCE_RANGE = (0, 128)
 
@@ -97,12 +101,7 @@ class ToolOptionsMixin:
         )
         self._size_scale.update_property([Gtk.AccessibleProperty.LABEL], [_("Size")])
         self._size_section.append(self._size_scale)
-        # The value and its unit, in a box of their own; the slider says it
-        # to a screen reader.
-        self._size_value = Gtk.Label(valign=Gtk.Align.CENTER, accessible_role=Gtk.AccessibleRole.PRESENTATION)
-        self._size_value.add_css_class("numeric")
-        self._size_value.add_css_class("tempera-option-value")
-        self._size_section.append(self._size_value)
+        self._size_section.append(self._build_size_field())
         self._size_adjustment.connect("value-changed", self._on_size_changed)
         bar.append(self._size_section)
 
@@ -359,6 +358,88 @@ class ToolOptionsMixin:
         scale.connect("value-changed", changed)
         return scale, shown
 
+    def _build_size_field(self) -> Gtk.Widget:
+        """The size as a number to type, with a list of the usual ones beside it, and its unit."""
+        self._size_entry = Gtk.Entry(
+            width_chars=3,
+            max_width_chars=4,
+            xalign=1,
+            input_purpose=Gtk.InputPurpose.DIGITS,
+            valign=Gtk.Align.CENTER,
+        )
+        self._size_entry.add_css_class("numeric")
+        self._size_entry.update_property([Gtk.AccessibleProperty.LABEL], [_("Size")])
+        self._size_entry.connect("activate", lambda *_args: self._take_typed_size())
+        leaving = Gtk.EventControllerFocus()
+        leaving.connect("leave", lambda *_args: self._take_typed_size())
+        self._size_entry.add_controller(leaving)
+
+        self._size_list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.SINGLE)
+        self._size_list.add_css_class("tempera-size-list")
+        self._size_list.connect("row-activated", self._on_size_preset)
+        scroller = Gtk.ScrolledWindow(
+            hscrollbar_policy=Gtk.PolicyType.NEVER,
+            max_content_height=320,
+            propagate_natural_height=True,
+            propagate_natural_width=True,
+        )
+        scroller.set_child(self._size_list)
+        popover = Gtk.Popover(child=scroller)
+        popover.connect("show", lambda *_args: self._select_size_preset())
+        self._size_presets = Gtk.MenuButton(
+            icon_name="pan-down-symbolic", popover=popover, valign=Gtk.Align.CENTER
+        )
+        self._size_presets.set_tooltip_text(_("Common sizes"))
+        self._size_presets.update_property([Gtk.AccessibleProperty.LABEL], [_("Common sizes")])
+
+        field = Gtk.Box(valign=Gtk.Align.CENTER)
+        field.add_css_class("linked")
+        field.append(self._size_entry)
+        field.append(self._size_presets)
+        self._size_unit = Gtk.Label(valign=Gtk.Align.CENTER)
+        self._size_unit.add_css_class("dim-label")
+        box = Gtk.Box(spacing=6)
+        box.append(field)
+        box.append(self._size_unit)
+        return box
+
+    def _take_typed_size(self) -> None:
+        """Take the size typed in, kept within what the slider reaches; anything else puts back the size."""
+        text = self._size_entry.get_text().strip().lower().removesuffix("pt").removesuffix("px").strip()
+        try:
+            size = int(float(text))
+        except ValueError:
+            self._show_size(int(self._size_adjustment.get_value()))
+            return
+        low, high = self._size_adjustment.get_lower(), self._size_adjustment.get_upper()
+        size = int(max(low, min(size, high)))
+        if size == int(self._size_adjustment.get_value()):
+            self._show_size(size)
+        else:
+            self._size_adjustment.set_value(size)
+
+    def _fill_size_presets(self) -> None:
+        """The usual sizes for what the slider serves now: text or a brush."""
+        self._size_list.remove_all()
+        text = self.canvas.supports_font
+        unit = _("pt") if text else _("px")
+        self._size_choices = FONT_SIZE_PRESETS if text else BRUSH_SIZE_PRESETS
+        for size in self._size_choices:
+            label = Gtk.Label(label=_("{size} {unit}").format(size=size, unit=unit), xalign=1)
+            label.add_css_class("numeric")
+            self._size_list.append(label)
+
+    def _select_size_preset(self) -> None:
+        """Show which of the usual sizes is the one now, if it is one of them."""
+        current = int(self._size_adjustment.get_value())
+        self._size_list.unselect_all()
+        if current in self._size_choices:
+            self._size_list.select_row(self._size_list.get_row_at_index(self._size_choices.index(current)))
+
+    def _on_size_preset(self, listbox, row: Gtk.ListBoxRow) -> None:
+        self._size_presets.popdown()
+        self._size_adjustment.set_value(self._size_choices[row.get_index()])
+
     def _step_size(self, step: int) -> None:
         """[ and ]: a bigger or smaller brush, or bigger or smaller text."""
         self._size_adjustment.set_value(self._size_adjustment.get_value() + step)
@@ -384,10 +465,11 @@ class ToolOptionsMixin:
         self._size_adjustment.configure(size, low, high, 1, 4, 0)
         self._syncing_size = False
         self._show_size(size)
+        self._fill_size_presets()
 
     def _show_size(self, size: int) -> None:
-        unit = _("pt") if self.canvas.supports_font else _("px")
-        self._size_value.set_label(_("{size} {unit}").format(size=size, unit=unit))
+        self._size_entry.set_text(str(size))
+        self._size_unit.set_label(_("pt") if self.canvas.supports_font else _("px"))
 
     def _transparent_toggle(self) -> Gtk.ToggleButton:
         """Transparent selection, for the options of each selection tool; they share one setting."""
