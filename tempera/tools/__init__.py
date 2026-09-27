@@ -41,6 +41,7 @@ FILL_TOOL_ID = FillTool.id
 TEXT_TOOL_ID = TextTool.id
 SELECT_TOOL_ID = SelectTool.id
 WAND_TOOL_ID = MagicWandTool.id
+PICKER_TOOL_ID = PickerTool.id
 # The tools that pick out part of the image, and can grab it to move it.
 SELECTION_TOOL_IDS = {SelectTool.id, LassoTool.id, MagicWandTool.id}
 
@@ -70,6 +71,7 @@ __all__ = [
     "SELECTION_SHAPE_IDS",
     "SIDEBAR_TOOL_CLASSES",
     "WAND_TOOL_ID",
+    "PICKER_TOOL_ID",
     "DEFAULT_WAND_TOLERANCE",
     "create_tools",
 ]

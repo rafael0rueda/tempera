@@ -16,6 +16,7 @@ from ..document import Document
 from ..i18n import _
 from ..settings import load_palette_position, save_settings
 from ..preferences import PreferencesDialog
+from ..screen_color import pick_screen_color
 from ..shortcuts_dialog import ShortcutsDialog
 from ..text import ALIGNMENTS, TEXT_SWITCHES
 from ..tools import DEFAULT_SHAPE, SHAPE_IDS, SHAPES_TOOL_ID
@@ -136,6 +137,7 @@ class TemperaWindow(
             "copy": lambda *_args: self._copy(),
             "paste": lambda *_args: self._paste(),
             "swap-colors": lambda *_args: self.colors.swap(),
+            "pick-from-screen": lambda *_args: self._pick_from_screen(),
             "size-up": lambda *_args: self._step_size(1),
             "size-down": lambda *_args: self._step_size(-1),
             "shortcuts": lambda *_args: ShortcutsDialog(self.get_application()).present(self),
@@ -279,6 +281,14 @@ class TemperaWindow(
         for window in self.get_application().get_windows():
             if isinstance(window, TemperaWindow):
                 window.sync_interface_size()
+
+    def _pick_from_screen(self) -> None:
+        """Take the primary colour from anywhere on the screen."""
+
+        def on_color(color: Gdk.RGBA) -> None:
+            self.colors.primary = color
+
+        pick_screen_color(on_color, self.show_toast)
 
     def _on_color_picked(self, canvas, color, button) -> None:
         # The color arrives on loan from the signal and is freed as soon as the

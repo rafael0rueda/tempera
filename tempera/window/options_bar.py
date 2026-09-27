@@ -10,7 +10,14 @@ from gi.repository import GLib, Gtk, Pango
 from ..color import ColorChip
 from ..i18n import _
 from ..text import FONT_SIZE_RANGE, font_size, font_without_size, with_font_size
-from ..tools import DENSITY_RANGE, SELECTION_SHAPE_IDS, SHAPE_CLASSES, TOOL_CLASSES, WAND_TOOL_ID
+from ..tools import (
+    DENSITY_RANGE,
+    PICKER_TOOL_ID,
+    SELECTION_SHAPE_IDS,
+    SHAPE_CLASSES,
+    TOOL_CLASSES,
+    WAND_TOOL_ID,
+)
 
 # The one size slider serves the brush and, with the text tool up, the font.
 BRUSH_SIZE_RANGE = (1, 64)
@@ -228,6 +235,17 @@ class ToolOptionsMixin:
             _("Background"), self._background_chip, _("Put the text on a box of the secondary colour")
         )
         background.set_action_name("win.text-background")
+        # The picker takes colours off the canvas; this takes one off anywhere
+        # on the screen, other windows too.
+        from_screen = Gtk.Button(valign=Gtk.Align.CENTER)
+        from_screen_content = Gtk.Box(spacing=8)
+        from_screen_content.append(Gtk.Image(icon_name="tempera-color-picker-symbolic"))
+        from_screen_content.append(Gtk.Label(label=_("Pick from Screen")))
+        from_screen.set_child(from_screen_content)
+        from_screen.set_tooltip_text(_("Take the primary colour from anywhere on the screen"))
+        from_screen.set_action_name("win.pick-from-screen")
+        self._add_page("picker", from_screen)
+
         self._add_page(
             "text",
             _row(
@@ -397,6 +415,8 @@ class ToolOptionsMixin:
             page = "select"
         elif canvas.active_tool.id == WAND_TOOL_ID:
             page = "wand"
+        elif canvas.active_tool.id == PICKER_TOOL_ID:
+            page = "picker"
         self._tool_options.set_visible_child_name(page)
 
     def _choose_font(self, *_args) -> None:

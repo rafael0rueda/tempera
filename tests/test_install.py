@@ -120,6 +120,10 @@ def test_nothing_is_still_called_hue():
         ],
         "tests/test_install.py": None,
         "tests/test_settings.py": ["old_hue_settings"],
+        # Hue as a colour, not the old name: the colour editor is made of it.
+        "tempera/color_editor.py": None,
+        "tests/test_color_editor.py": None,
+        "data/style.css": ["tempera-hue-scale", "the hues it runs through"],
     }
     tracked = subprocess.run(
         ["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, check=True

@@ -44,6 +44,8 @@ class ColorState(GObject.Object):
         # Colors painted with lately, newest first, so a mixed color is a click
         # away the next time it is wanted.
         self.recent: list[Gdk.RGBA] = []
+        # Colours kept on purpose in the colour editor, newest first.
+        self.custom: list[Gdk.RGBA] = []
 
     @property
     def primary(self) -> Gdk.RGBA:
@@ -389,23 +391,27 @@ class ColorBar(Gtk.Box):
         )
         self._refresh_recent()
 
-    def choose(self, primary: bool) -> None:
-        """Open the colour dialog for the primary or the secondary colour."""
-        # With alpha, so a colour can be made see-through; the dialog's own
-        # custom section is where a hex value can be typed in.
-        dialog = Gtk.ColorDialog(with_alpha=True, title=_("Choose a color"))
-        initial = self.colors.primary if primary else self.colors.secondary
+    def choose(self, primary: bool) -> ColorEditor:
+        """Open the colour editor for the primary or the secondary colour."""
+        # Imported here: the editor is built from this module's swatches.
+        from .color_editor import ColorEditor
 
-        def on_done(source, result):
-            try:
-                color = source.choose_rgba_finish(result)
-            except Exception:
-                return
-            if color is None:
-                return
+        root = self.get_root()
+        editor = ColorEditor(
+            # Short, to fit between Cancel and Select at any font.
+            _("Primary") if primary else _("Secondary"),
+            self.colors.primary if primary else self.colors.secondary,
+            self.colors,
+            getattr(root, "show_toast", None),
+        )
+
+        def on_chosen(_editor, color: Gdk.RGBA) -> None:
+            # Copied: the colour arrives on loan from the signal.
             if primary:
-                self.colors.primary = color
+                self.colors.primary = color.copy()
             else:
-                self.colors.secondary = color
+                self.colors.secondary = color.copy()
 
-        dialog.choose_rgba(self.get_root(), initial, None, on_done)
+        editor.connect("chosen", on_chosen)
+        editor.present(root)
+        return editor

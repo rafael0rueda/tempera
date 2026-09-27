@@ -8,6 +8,7 @@ from __future__ import annotations
 from gi.repository import Gdk, GLib
 
 from ..color import MAX_RECENT_COLORS, rgba
+from ..color_editor import MAX_CUSTOM_COLORS
 from ..document import Document
 from ..settings import load_setting, save_settings
 from ..text import ALIGNMENTS, TEXT_SWITCHES, font_without_size
@@ -133,6 +134,8 @@ class SessionMixin:
                 setattr(self.colors, attribute, color)
         recent = [rgba(spec) for spec in load_setting("recent-colors").split()]
         self.colors.recent = [color for color in recent if color is not None][:MAX_RECENT_COLORS]
+        custom = [rgba(spec) for spec in load_setting("custom-colors").split()]
+        self.colors.custom = [color for color in custom if color is not None][:MAX_CUSTOM_COLORS]
         self._color_bar.refresh()
         self._sync_size_scale()
         self._sync_tool_options()
@@ -165,6 +168,7 @@ class SessionMixin:
                 "primary-color": self.colors.primary.to_string(),
                 "secondary-color": self.colors.secondary.to_string(),
                 "recent-colors": " ".join(color.to_string() for color in self.colors.recent),
+                "custom-colors": " ".join(color.to_string() for color in self.colors.custom),
             }
         )
 

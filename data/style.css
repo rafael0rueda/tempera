@@ -193,3 +193,29 @@ windowtitle .subtitle {
 .tempera-menu-row button label {
   font-weight: normal;
 }
+
+/* The colour editor. The hue slider shows the hues it runs through, and its
+   own fill would only hide them. */
+.tempera-color-editor {
+  padding: 12px 24px 24px;
+}
+
+.tempera-hue-scale trough {
+  min-height: 12px;
+  border-radius: 6px;
+  background-image: linear-gradient(to right, #ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000);
+}
+
+.tempera-hue-scale highlight {
+  background: none;
+}
+
+.tempera-color-preview {
+  border-radius: 6px;
+  outline: 1px solid alpha(currentColor, 0.15);
+}
+
+.tempera-color-area:focus-visible {
+  outline: 2px solid @accent_color;
+  outline-offset: 2px;
+}
