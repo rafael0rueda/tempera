@@ -5,7 +5,6 @@ from gi.repository import Gdk
 
 from tempera.text import TextBox, font_size, font_without_size, with_font_size
 
-from pixels import pixel_at
 
 COLOR = Gdk.RGBA()
 COLOR.parse("#000000")

@@ -26,6 +26,8 @@ from .window import TemperaWindow  # noqa: E402
 
 WEBSITE = "https://github.com/rafael0rueda/tempera"
 ISSUES = WEBSITE + "/issues"
+# The guide as it was for this version, not as it has become since.
+GUIDE = f"{WEBSITE}/blob/v{VERSION}/USER_GUIDE.md"
 
 
 def metainfo_path(directory: Path | None = None) -> Path | None:
@@ -77,6 +79,26 @@ def data_dir() -> Path | None:
     return next((path for path in candidates if path.is_dir()), None)
 
 
+def load_resources() -> None:
+    """Give the display Tempera's own icons and stylesheet."""
+    directory = data_dir()
+    display = Gdk.Display.get_default()
+    if directory is None or display is None:
+        return
+
+    icons = directory / "icons"
+    if icons.is_dir():
+        Gtk.IconTheme.get_for_display(display).add_search_path(str(icons))
+
+    stylesheet = directory / "style.css"
+    if stylesheet.is_file():
+        provider = Gtk.CssProvider()
+        provider.load_from_string(stylesheet.read_text())
+        Gtk.StyleContext.add_provider_for_display(
+            display, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+        )
+
+
 class TemperaApplication(Adw.Application):
     def __init__(self):
         super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.HANDLES_OPEN)
@@ -89,7 +111,11 @@ class TemperaApplication(Adw.Application):
         self._load_resources()
         interface_size.apply(interface_size.parse(load_setting("interface-size")))
 
-        for name, callback in (("quit", self._on_quit), ("about", self._on_about)):
+        for name, callback in (
+            ("quit", self._on_quit),
+            ("about", self._on_about),
+            ("help", self._on_help),
+        ):
             action = Gio.SimpleAction.new(name, None)
             action.connect("activate", callback)
             self.add_action(action)
@@ -117,8 +143,8 @@ class TemperaApplication(Adw.Application):
         self._offer_recovery(window)
         if error_message is not None:
             print(f"tempera: could not open image: {error_message}", file=sys.stderr)
-            window.show_toast(
-                _("Could not open image: {message}").format(message=error_message)
+            window.show_failure(
+                _("Could Not Open “{name}”").format(name=files[0].get_basename()), error_message
             )
 
     def _offer_recovery(self, window: TemperaWindow) -> None:
@@ -193,25 +219,7 @@ class TemperaApplication(Adw.Application):
         return window
 
     def _load_resources(self) -> None:
-        directory = data_dir()
-        if directory is None:
-            return
-
-        display = Gdk.Display.get_default()
-        if display is None:
-            return
-
-        icons = directory / "icons"
-        if icons.is_dir():
-            Gtk.IconTheme.get_for_display(display).add_search_path(str(icons))
-
-        stylesheet = directory / "style.css"
-        if stylesheet.is_file():
-            provider = Gtk.CssProvider()
-            provider.load_from_string(stylesheet.read_text())
-            Gtk.StyleContext.add_provider_for_display(
-                display, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
-            )
+        load_resources()
 
     def _on_quit(self, *_args):
         # Each window asks about its own unsaved changes; the application ends
@@ -221,6 +229,10 @@ class TemperaApplication(Adw.Application):
             self.quit()
         for window in windows:
             window.close()
+
+    def _on_help(self, *_args):
+        """Open the user guide for this version, in the browser."""
+        Gtk.UriLauncher.new(GUIDE).launch(self.props.active_window, None, None)
 
     def _on_about(self, *_args):
         about = Adw.AboutDialog(

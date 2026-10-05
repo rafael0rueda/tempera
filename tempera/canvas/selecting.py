@@ -93,6 +93,9 @@ class SelectionMixin:
         return True
 
     def crop_to_selection(self) -> bool:
+        if self._paste is not None:
+            # What floats is what is selected: it lands, and the picture is cropped to it.
+            self.commit_paste(keep_selected=True)
         if self._selection is None:
             return False
         self._document.crop_to(*self._selection.rect, mask=self._selection.mask)

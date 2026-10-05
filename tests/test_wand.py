@@ -4,28 +4,21 @@
 """The magic wand: selecting the pixels of a colour joined to the one clicked."""
 
 import pytest
-from gi.repository import Adw, Gdk, Gio, GLib
+from gi.repository import GLib
 
-from tempera import recent_files, settings
 from tempera.canvas import Canvas, pointer
 from tempera.color import ColorState
 from tempera.document import Document, new_surface
 from tempera.selection import Selection
+from tempera.tools.wand import MagicWandTool
 from tempera.window import TemperaWindow
 
+from driving import FakeGesture
 from pixels import paint_pixel, pixel_at, render_widget
 
 WHITE = (1.0, 1.0, 1.0, 1.0)
 RED = (1.0, 0.0, 0.0, 1.0)
 PINK = (1.0, 0.1, 0.1, 1.0)
-
-
-class FakeGesture:
-    def get_current_button(self):
-        return Gdk.BUTTON_PRIMARY
-
-    def get_current_event_state(self):
-        return Gdk.ModifierType(0)
 
 
 def red_l(surface):
@@ -148,25 +141,6 @@ def test_the_ants_are_drawn_along_the_pixels_edges(canvas):
 # In the window
 
 
-@pytest.fixture(scope="module")
-def application():
-    app = Adw.Application(
-        application_id="io.github.rafael0rueda.Tempera.WandTests",
-        flags=Gio.ApplicationFlags.NON_UNIQUE,
-    )
-    app.register(None)
-    return app
-
-
-@pytest.fixture
-def window(application, monkeypatch, tmp_path):
-    monkeypatch.setattr(recent_files, "_recent_file_path", lambda: tmp_path / "recent-files.txt")
-    monkeypatch.setattr(settings, "_settings_path", lambda: tmp_path / "settings.ini")
-    window = TemperaWindow(application)
-    yield window
-    window.destroy()
-
-
 def use(window, tool):
     window.lookup_action("tool").change_state(GLib.Variant.new_string(tool))
 
@@ -208,3 +182,66 @@ def test_the_wand_has_a_key():
     from tempera import shortcuts
 
     assert shortcuts.keys_for("win.tool::wand") == ["m"]
+
+
+# Only the edges in view are drawn: a pick on a photo can have a million
+
+
+def speckled_pick():
+    import random
+
+    rng = random.Random(5)
+    surface = new_surface(300, 400, WHITE)
+    for _each in range(900):
+        paint_pixel(surface, rng.randrange(300), rng.randrange(400), (0.0, 0.0, 0.0, 1.0))
+    return Selection.from_color(surface, 0, 0, 0)
+
+
+def covered(edges):
+    """Every unit step of some edges, so that cutting one in two changes nothing."""
+    steps = set()
+    for x1, y1, x2, y2 in edges:
+        if y1 == y2:
+            steps.update(("across", x, y1) for x in range(x1, x2))
+        else:
+            steps.update(("down", x1, y) for y in range(y1, y2))
+    return steps
+
+
+def test_the_edges_in_view_are_all_of_those_that_reach_into_it():
+    selection = speckled_pick()
+    assert len(selection.edges) > 1000
+    for view in ((0, 0, 300, 400), (40, 130, 90, 260), (250, 0, 300, 10), (0, 399, 300, 400)):
+        left, top, right, bottom = view
+        expected = {
+            step for step in covered(selection.edges)
+            if left <= step[1] <= right and top <= step[2] <= bottom
+        }
+        found = covered(selection.edges_within(*view))
+        # Nothing in view is missed, and little outside it is drawn.
+        assert expected <= found
+        assert len(found) <= len(covered(selection.edges))
+    whole = selection.edges_within(0, 0, 300, 400)
+    assert covered(whole) == covered(selection.edges)
+    assert len(selection.edges_within(40, 130, 90, 260)) < len(whole) / 4
+
+
+def test_a_view_off_the_selection_draws_nothing():
+    selection = Selection(10, 10, 20, 20)
+    assert selection.edges_within(100, 100, 200, 200) == []
+    assert len(selection.edges_within(0, 0, 50, 50)) == 4
+
+
+def test_the_wand_works_out_the_edges_before_it_hands_the_selection_over():
+    tool = MagicWandTool()
+    surface = new_surface(40, 40, WHITE)
+    paint_pixel(surface, 20, 20, (0.0, 0.0, 0.0, 1.0))
+
+    class Context:
+        tolerance = 0
+        select_pixels = None
+
+    Context.surface = surface
+    tool.press(Context, 0, 0)
+    # Already there, so the first frame that draws them does not stall working them out.
+    assert "_edge_bands" in tool._found.__dict__

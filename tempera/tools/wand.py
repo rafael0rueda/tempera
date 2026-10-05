@@ -17,6 +17,8 @@ class MagicWandTool(Tool):
     """
 
     id = "wand"
+    options_page = "wand"
+    tolerance = "wand_tolerance"
     label = _("Magic Wand")
     icon_name = "tempera-select-wand-symbolic"
     # Picking a region changes nothing in the image; moving or deleting it later does.
@@ -31,6 +33,10 @@ class MagicWandTool(Tool):
 
     def press(self, ctx, x, y):
         self._found = Selection.from_color(ctx.surface, x, y, ctx.tolerance)
+        if self._found is not None:
+            # Its edges too, here off the UI thread: on a photo there can be
+            # a million of them, and the first frame would stall finding them.
+            self._found.prepare()
         self._searched = True
 
     def release(self, ctx, x, y):

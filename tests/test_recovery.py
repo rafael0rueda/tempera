@@ -3,34 +3,19 @@
 
 import json
 import stat
-import time
 
 import pytest
-from gi.repository import Adw, Gio, GLib
+from gi.repository import Adw, Gio
 
-from tempera import recent_files, recovery, settings
+from tempera import recovery
 from tempera.document import Document, new_surface
 from tempera.main import TemperaApplication
-from tempera.window import TemperaWindow
 
+from driving import wait_until
 from pixels import paint_pixel, pixel_at
 
 RED = (1.0, 0.0, 0.0, 1.0)
 WHITE = (1.0, 1.0, 1.0, 1.0)
-
-
-def wait_for(condition, seconds: float = 5.0) -> bool:
-    context = GLib.MainContext.default()
-    deadline = time.monotonic() + seconds
-    tick = GLib.timeout_add(10, lambda: GLib.SOURCE_CONTINUE)
-    try:
-        while not condition():
-            if time.monotonic() > deadline:
-                return False
-            context.iteration(True)
-        return True
-    finally:
-        GLib.source_remove(tick)
 
 
 def save_and_wait(slot, image, info=None):
@@ -38,7 +23,7 @@ def save_and_wait(slot, image, info=None):
     document = image if isinstance(image, Document) else Document(image)
     written = []
     slot.save(document, info or {"title": "Test.png", "file": None}, lambda error: written.append(True))
-    assert wait_for(lambda: written)
+    assert wait_until(lambda: written)
 
 
 def crash(slot):
@@ -96,7 +81,7 @@ def test_a_copy_cleared_while_being_written_is_removed_when_the_write_ends(priva
     written = []
     slot.save(Document(new_surface(200, 200, RED)), {"title": "T"}, lambda error: written.append(True))
     slot.clear()
-    assert wait_for(lambda: written)
+    assert wait_until(lambda: written)
     assert not slot.image_path.exists() and not slot.json_path.exists()
     slot.close()
 
@@ -105,7 +90,7 @@ def test_a_window_closed_while_writing_leaves_nothing(private_recovery_dir):
     slot = recovery.RecoverySlot()
     slot.save(Document(new_surface(200, 200, RED)), {"title": "T"})
     slot.close()
-    assert wait_for(lambda: files(private_recovery_dir) == [])
+    assert wait_until(lambda: files(private_recovery_dir) == [])
 
 
 # After a crash
@@ -222,15 +207,6 @@ def application():
     return app
 
 
-@pytest.fixture
-def window(application, monkeypatch, tmp_path):
-    monkeypatch.setattr(recent_files, "_recent_file_path", lambda: tmp_path / "recent-files.txt")
-    monkeypatch.setattr(settings, "_settings_path", lambda: tmp_path / "settings.ini")
-    window = TemperaWindow(application)
-    yield window
-    window.destroy()
-
-
 def draw(window):
     document = window.canvas.document
     document.begin_change()
@@ -250,7 +226,7 @@ def test_an_untouched_image_keeps_no_copy(window, private_recovery_dir):
 def test_unsaved_changes_are_kept_and_only_again_after_more_changes(window, monkeypatch):
     draw(window)
     window._keep_recovery_copy()
-    assert wait_for(lambda: kept(window))
+    assert wait_until(lambda: kept(window))
 
     saves = []
     monkeypatch.setattr(window._recovery, "save", lambda *args: saves.append(args))
@@ -264,7 +240,7 @@ def test_unsaved_changes_are_kept_and_only_again_after_more_changes(window, monk
 def test_saving_or_undoing_back_forgets_the_copy(window):
     draw(window)
     window._keep_recovery_copy()
-    assert wait_for(lambda: kept(window))
+    assert wait_until(lambda: kept(window))
     window.canvas.document.undo()
     assert not kept(window)
 
@@ -273,11 +249,11 @@ def test_closing_the_window_leaves_nothing(window, private_recovery_dir):
     window.present()
     draw(window)
     window._keep_recovery_copy()
-    assert wait_for(lambda: kept(window))
+    assert wait_until(lambda: kept(window))
     # What choosing Discard does.
     window._closing = True
     window.close()
-    assert wait_for(lambda: files(private_recovery_dir) == [])
+    assert wait_until(lambda: files(private_recovery_dir) == [])
     assert window._recovery_timer == 0
 
 
@@ -316,8 +292,8 @@ def test_recovering_into_a_blank_window_reopens_the_file_as_unsaved(application,
     assert pixel_at(document.surface, 2, 2) == (255, 0, 0, 255)
     # The window keeps a copy of its own at once, and only then is the old one gone.
     assert leftover.image_path.exists()
-    assert wait_for(lambda: kept(window))
-    assert wait_for(lambda: not leftover.image_path.exists())
+    assert wait_until(lambda: kept(window))
+    assert wait_until(lambda: not leftover.image_path.exists())
 
 
 def test_a_window_already_in_use_is_left_alone(application, window):
@@ -375,13 +351,13 @@ def test_a_copy_that_fails_says_so_and_the_next_still_gets_written(private_recov
     monkeypatch.setattr(recovery, "write_openraster", broken)
     heard = []
     slot.save(Document(new_surface(3, 3, RED)), {"title": "T"}, heard.append)
-    assert wait_for(lambda: heard)
+    assert wait_until(lambda: heard)
     assert heard == ["out of memory"]
     assert not slot.json_path.exists()
 
     monkeypatch.setattr(recovery, "write_openraster", real)
     slot.save(Document(new_surface(3, 3, RED)), {"title": "T"}, heard.append)
-    assert wait_for(lambda: len(heard) == 2)
+    assert wait_until(lambda: len(heard) == 2)
     assert heard[1] is None and slot.json_path.is_file()
     slot.close()
 
@@ -395,7 +371,7 @@ def test_a_full_disk_is_reported(private_recovery_dir, monkeypatch):
     monkeypatch.setattr(recovery, "write_openraster", full)
     heard = []
     slot.save(Document(new_surface(3, 3, RED)), {"title": "T"}, heard.append)
-    assert wait_for(lambda: heard)
+    assert wait_until(lambda: heard)
     assert heard == ["No space left on device"]
     slot.close()
 
@@ -405,7 +381,7 @@ def test_each_copy_asked_for_hears_back(private_recovery_dir):
     heard = []
     slot.save(Document(new_surface(200, 200, RED)), {"title": "T"}, lambda error: heard.append("first"))
     slot.save(Document(new_surface(200, 200, RED)), {"title": "T"}, lambda error: heard.append("second"))
-    assert wait_for(lambda: len(heard) == 2)
+    assert wait_until(lambda: len(heard) == 2)
     assert heard == ["first", "second"]
     slot.close()
 
@@ -420,7 +396,7 @@ def test_the_window_says_once_that_copies_are_failing(window, monkeypatch):
     for _each in range(2):
         draw(window)
         window._keep_recovery_copy()
-        assert wait_for(lambda: not window._recovery._writing)
+        assert wait_until(lambda: not window._recovery._writing)
     assert len(toasts) == 1 and "No space left on device" in toasts[0]
 
 
@@ -433,7 +409,7 @@ def test_a_recovered_picture_whose_new_copy_fails_keeps_the_old_one(application,
     monkeypatch.setattr(recovery, "write_openraster", full)
     window.show_toast = lambda message: None
     application._recover(window, leftover)
-    assert wait_for(lambda: leftover.lock is None)
+    assert wait_until(lambda: leftover.lock is None)
     assert leftover.image_path.exists()
 
 

@@ -4,9 +4,9 @@
 """The colour editor, and picking a colour from the screen."""
 
 import pytest
-from gi.repository import Adw, Gdk, Gio, GLib
+from gi.repository import Gdk, GLib
 
-from tempera import color_editor, recent_files, settings
+from tempera import color_editor
 from tempera.color import ColorState, rgba
 from tempera.color_editor import MAX_CUSTOM_COLORS, ColorEditor, parse_hex, to_hex
 from tempera.screen_color import color_from_results, pick_on, request_path
@@ -259,25 +259,6 @@ def test_an_answer_without_a_colour_is_not_one():
 # In the window
 
 
-@pytest.fixture(scope="module")
-def application():
-    app = Adw.Application(
-        application_id="io.github.rafael0rueda.Tempera.ColorEditorTests",
-        flags=Gio.ApplicationFlags.NON_UNIQUE,
-    )
-    app.register(None)
-    return app
-
-
-@pytest.fixture
-def window(application, monkeypatch, tmp_path):
-    monkeypatch.setattr(recent_files, "_recent_file_path", lambda: tmp_path / "recent-files.txt")
-    monkeypatch.setattr(settings, "_settings_path", lambda: tmp_path / "settings.ini")
-    window = TemperaWindow(application)
-    yield window
-    window.destroy()
-
-
 def test_clicking_a_current_colour_opens_the_editor_for_it(window):
     editor = window._color_bar.choose(primary=False)
     assert isinstance(editor, ColorEditor)
@@ -304,3 +285,14 @@ def test_the_picker_can_take_a_colour_off_the_screen(window, monkeypatch):
     assert window._tool_options.get_visible_child_name() == "picker"
     window.activate_action("win.pick-from-screen", None)
     assert to_hex(window.colors.primary) == "#e66100"
+
+
+def test_a_value_that_is_no_colour_says_so_in_words(colors):
+    editor = ColorEditor("Primary", rgba("#3584e4"), colors)
+    editor.hex.set_text("#12")
+    editor._take_hex()
+    assert editor.hex.has_css_class("error")
+    assert "#rrggbb" in editor.hex.get_tooltip_text()
+    editor.hex.set_text("#26a269")
+    editor._take_hex()
+    assert not editor.hex.has_css_class("error") and editor.hex.get_tooltip_text() is None

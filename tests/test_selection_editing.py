@@ -10,6 +10,7 @@ from tempera.selection import Selection
 from tempera.color import ColorState
 from tempera.document import MAX_SIZE, Document, new_surface
 
+from driving import FakeGesture
 from pixels import paint_pixel, pixel_at
 
 RED = (1.0, 0.0, 0.0, 1.0)
@@ -209,3 +210,93 @@ def test_pending_floating_counts_a_paste_and_typed_text_only():
 
     canvas.begin_paste(new_surface(2, 2, RED), 0, 0)
     assert canvas.has_pending_floating
+
+
+# What floats over the picture is the selection, as in Paint
+
+
+def lifted(canvas=None):
+    """A canvas with a red block at (4, 4)-(16, 16) picked up and moved 10 px right."""
+    canvas = canvas or make_canvas(60, 50)
+    document = canvas.document
+    for x in range(4, 16):
+        for y in range(4, 16):
+            paint_pixel(document.surface, x, y, RED)
+    document.modified = False
+    canvas.select_tool("select")
+    canvas.select_region(4, 4, 12, 12)
+    gesture = FakeGesture()
+    canvas._on_drag_begin(gesture, 10, 10)
+    canvas._on_drag_update(gesture, 10, 0)
+    canvas._on_drag_end(gesture, 10, 0)
+    assert canvas.has_floating_paste
+    return canvas
+
+
+def press(canvas, keyval):
+    return canvas._on_key_pressed(None, keyval, 0, Gdk.ModifierType(0))
+
+
+def test_what_floats_can_be_copied_without_putting_it_down():
+    canvas = lifted()
+    pixels = canvas.floating_pixels()
+    assert (pixels.get_width(), pixels.get_height()) == (12, 12)
+    assert pixel_at(pixels, 0, 0) == (255, 0, 0, 255)
+    assert canvas.has_floating_paste
+
+
+def test_delete_throws_away_what_floats_for_good():
+    canvas = lifted()
+    document = canvas.document
+    assert press(canvas, Gdk.KEY_Delete)
+    assert not canvas.has_floating_paste
+    # Gone from where it was lifted, and not landed where it was carried to.
+    assert pixel_at(document.surface, 5, 5) == (255, 255, 255, 255)
+    assert pixel_at(document.surface, 20, 5) == (255, 255, 255, 255)
+    document.undo()
+    assert pixel_at(document.surface, 5, 5) == (255, 0, 0, 255)
+
+
+def test_escape_still_puts_what_was_lifted_back():
+    canvas = lifted()
+    assert press(canvas, Gdk.KEY_Escape)
+    assert pixel_at(canvas.document.surface, 5, 5) == (255, 0, 0, 255)
+    assert not canvas.document.can_undo
+
+
+def test_delete_on_something_pasted_just_drops_it():
+    canvas = make_canvas(20, 20)
+    canvas.begin_paste(new_surface(4, 4, RED), 2, 2)
+    assert press(canvas, Gdk.KEY_BackSpace)
+    assert not canvas.has_floating_paste and not canvas.document.can_undo
+
+
+def test_landing_with_enter_keeps_it_selected_and_clicking_away_lets_go():
+    canvas = lifted()
+    assert press(canvas, Gdk.KEY_Return)
+    assert canvas._selection.rect == (14, 4, 12, 12)
+    assert pixel_at(canvas.document.surface, 20, 5) == (255, 0, 0, 255)
+
+    canvas = lifted()
+    gesture = FakeGesture()
+    canvas._on_drag_begin(gesture, 50, 40)
+    canvas._on_drag_end(gesture, 0, 0)
+    assert not canvas.has_floating_paste and canvas._selection is None
+
+
+def test_cropping_to_what_floats_lands_it_and_crops_to_it():
+    canvas = lifted()
+    assert canvas.crop_to_selection()
+    document = canvas.document
+    assert (document.width, document.height) == (12, 12)
+    assert pixel_at(document.surface, 1, 1) == (255, 0, 0, 255)
+
+
+def test_text_put_in_at_the_caret_as_pasting_does():
+    canvas = make_canvas(60, 40)
+    assert not canvas.insert_text("nowhere to go")
+    canvas.begin_text(5, 5, Gdk.RGBA(0, 0, 0, 1))
+    canvas.insert_text("ac")
+    canvas._text.caret = 1
+    assert canvas.insert_text("b")
+    assert canvas._text.text == "abc"

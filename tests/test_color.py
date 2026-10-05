@@ -29,12 +29,6 @@ def test_swap_exchanges_primary_and_secondary():
     assert colors.secondary == primary
 
 
-def test_for_button_picks_secondary_only_for_the_secondary_button():
-    colors = ColorState()
-    assert colors.for_button(Gdk.BUTTON_PRIMARY) == colors.primary
-    assert colors.for_button(Gdk.BUTTON_SECONDARY) == colors.secondary
-
-
 # recently used colors
 
 

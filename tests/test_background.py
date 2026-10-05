@@ -3,21 +3,18 @@
 
 """Work off the UI thread always reports back, however it ends."""
 
-import time
 
 from gi.repository import Gio, GLib
 
 from tempera.background import run_in_background
 
+from driving import wait_until
+
 
 def result_of(work):
     results = []
     run_in_background(work, results.append)
-    context = GLib.MainContext.default()
-    deadline = time.monotonic() + 5
-    while not results and time.monotonic() < deadline:
-        context.iteration(False)
-    assert results, "the work never reported back"
+    assert wait_until(lambda: results), "the work never reported back"
     return results[0]
 
 

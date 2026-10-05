@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from ..i18n import _
+from ..i18n import C_
 from .arrow import ArrowTool
 from .base import Tool
 from .curve import CurveTool
@@ -35,8 +35,9 @@ class ShapesTool(Tool):
     """One tool for every shape; the shape in hand does the drawing."""
 
     id = "shapes"
+    options_page = "shape"
     sized = True
-    label = _("Shapes")
+    label = C_("tool", "Shapes")
     icon_name = "tempera-shapes-symbolic"
     tip_icon_name = "tempera-shapes-tip-symbolic"
 

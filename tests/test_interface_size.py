@@ -1,14 +1,15 @@
 # SPDX-FileCopyrightText: 2026 Rafael Rueda
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-import time
 
 import pytest
-from gi.repository import Adw, Gio, GLib, Gtk
+from gi.repository import Gio, Gtk
 
-from tempera import interface_size, recent_files, settings
+from tempera import interface_size, settings
 from tempera.preferences import PreferencesDialog, size_label
 from tempera.window import PALETTE_BAR_HEIGHT, SIDEBAR_WIDTH, TemperaWindow
+
+from driving import wait_until
 
 
 @pytest.fixture(autouse=True)
@@ -17,25 +18,6 @@ def default_size():
     interface_size.apply(interface_size.DEFAULT_SIZE)
     yield
     interface_size.apply(interface_size.DEFAULT_SIZE)
-
-
-@pytest.fixture(scope="module")
-def application():
-    app = Adw.Application(
-        application_id="io.github.rafael0rueda.Tempera.SizeTests",
-        flags=Gio.ApplicationFlags.NON_UNIQUE,
-    )
-    app.register(None)
-    return app
-
-
-@pytest.fixture
-def window(application, monkeypatch, tmp_path):
-    monkeypatch.setattr(recent_files, "_recent_file_path", lambda: tmp_path / "recent-files.txt")
-    monkeypatch.setattr(settings, "_settings_path", lambda: tmp_path / "settings.ini")
-    window = TemperaWindow(application)
-    yield window
-    window.destroy()
 
 
 def dpi() -> int:
@@ -97,22 +79,6 @@ def test_an_unknown_size_falls_back_to_the_default():
     assert dpi() == system
 
 
-def wait_for(condition, seconds: float = 3.0) -> bool:
-    """Let GTK restyle and lay out until the condition holds, or give up."""
-    context = GLib.MainContext.default()
-    deadline = time.monotonic() + seconds
-    # Wakes the loop now and then, so it waits for GTK instead of spinning.
-    tick = GLib.timeout_add(20, lambda: GLib.SOURCE_CONTINUE)
-    try:
-        while not condition():
-            if time.monotonic() > deadline:
-                return False
-            context.iteration(True)
-        return True
-    finally:
-        GLib.source_remove(tick)
-
-
 def width(widget: Gtk.Widget) -> int:
     return widget.measure(Gtk.Orientation.HORIZONTAL, -1)[0]
 
@@ -126,7 +92,7 @@ def test_tool_buttons_and_swatches_are_drawn_bigger(window):
     window._set_interface_size(200)
 
     # The tool from the stylesheet, the palette (on the right) from the code.
-    assert wait_for(lambda: width(tool) >= 76)
+    assert wait_until(lambda: width(tool) >= 76)
     assert width(swatch) >= 44
     assert width(current) >= 56
 

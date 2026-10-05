@@ -8,16 +8,20 @@ import math
 from dataclasses import dataclass
 
 import cairo
-from gi.repository import Gdk, GdkPixbuf, GObject
+from gi.repository import GdkPixbuf, GObject
 
 from .i18n import _
+from .pixbufs import pixbuf_from_surface
 
 MAX_UNDO = 50
-# An undo step keeps only the rectangle the edit changed, but a fill or a
-# rotation changes all of it, so the history is also capped by memory: 50 whole
+# An undo step keeps only the pixels the edit changed, but a fill or a
+# rotation changes all of them, so the history is also capped by memory: 50 whole
 # steps of the largest canvas would take 12.8 GB. The newest step is always
 # kept, whatever its size.
 UNDO_BUDGET = 1024 * 1024 * 1024
+# What changed is kept in bands of the picture this tall, as tall as the tiles
+# the canvas draws in: see changed_pieces().
+PATCH_TILE = 512
 DEFAULT_WIDTH = 800
 DEFAULT_HEIGHT = 600
 MAX_SIZE = 8192
@@ -52,16 +56,6 @@ def clean_name(name: str) -> str:
     return "".join(
         character for character in name if character >= " " and character not in "\x7f\ufffe\uffff"
     ).strip()
-
-
-def surface_from_pixbuf(pixbuf: GdkPixbuf.Pixbuf) -> cairo.ImageSurface:
-    """Copy a pixbuf into a surface Tempera can draw on."""
-    surface = new_surface(pixbuf.get_width(), pixbuf.get_height(), (0, 0, 0, 0))
-    cr = cairo.Context(surface)
-    Gdk.cairo_set_source_pixbuf(cr, pixbuf, 0, 0)
-    cr.set_operator(cairo.OPERATOR_SOURCE)
-    cr.paint()
-    return surface
 
 
 def crop_surface(
@@ -105,33 +99,39 @@ def _row_pointers(surface: cairo.ImageSurface) -> tuple[int, int]:
 
 
 def changed_rect(
-    before: cairo.ImageSurface, after: cairo.ImageSurface
+    before: cairo.ImageSurface,
+    after: cairo.ImageSurface,
+    within: tuple[int, int, int, int] | None = None,
 ) -> tuple[int, int, int, int] | None:
     """The smallest rectangle holding every pixel that differs, or None if none do.
 
-    Both surfaces must be the same size. Rows are compared whole with memcmp; the
-    left and right edges are then narrowed by halving, so a stroke across a big
-    photo costs a few thousand comparisons rather than a walk over every byte.
+    Both surfaces must be the same size; `within` narrows the search to one
+    rectangle of them. Rows are compared whole with memcmp; the left and right
+    edges are then narrowed by halving, so a stroke across a big photo costs a
+    few thousand comparisons rather than a walk over every byte.
     """
-    width, height = after.get_width(), after.get_height()
+    x0, y0, width, height = within or (0, 0, after.get_width(), after.get_height())
     before.flush()
     after.flush()
     a, stride = _row_pointers(before)
     b, _stride = _row_pointers(after)
     row_bytes = width * 4
 
+    def row(y: int) -> int:
+        return (y0 + y) * stride + x0 * 4
+
     def differs(y: int, start: int, end: int) -> bool:
         """Whether row y differs anywhere in pixels start to end, end excluded."""
-        offset = y * stride + start * 4
+        offset = row(y) + start * 4
         return _libc.memcmp(a + offset, b + offset, (end - start) * 4) != 0
 
     top = 0
-    while top < height and _libc.memcmp(a + top * stride, b + top * stride, row_bytes) == 0:
+    while top < height and _libc.memcmp(a + row(top), b + row(top), row_bytes) == 0:
         top += 1
     if top == height:
         return None
     bottom = height - 1
-    while _libc.memcmp(a + bottom * stride, b + bottom * stride, row_bytes) == 0:
+    while _libc.memcmp(a + row(bottom), b + row(bottom), row_bytes) == 0:
         bottom -= 1
 
     # Pixels left of `left` and right of `right` are known to match so far;
@@ -158,7 +158,26 @@ def changed_rect(
                 else:
                     high = middle - 1
             right = low
-    return left, top, right - left, bottom - top + 1
+    return x0 + left, y0 + top, right - left, bottom - top + 1
+
+
+def changed_pieces(
+    before: cairo.ImageSurface, after: cairo.ImageSurface
+) -> list[tuple[int, int, int, int]]:
+    """The rectangles holding every pixel that differs, none taller than PATCH_TILE.
+
+    One rectangle around a stroke from corner to corner is the whole picture,
+    nearly all of it untouched. Cut into bands, each keeps only the stretch of
+    the stroke that crosses it, and the bands it misses keep nothing. Each row
+    is still compared only once, so this costs no more than one rectangle did.
+    """
+    width, height = after.get_width(), after.get_height()
+    pieces = []
+    for top in range(0, height, PATCH_TILE):
+        piece = changed_rect(before, after, (0, top, width, min(PATCH_TILE, height - top)))
+        if piece is not None:
+            pieces.append(piece)
+    return pieces
 
 
 def same_pixels(a: cairo.ImageSurface, b: cairo.ImageSurface) -> bool:
@@ -207,6 +226,15 @@ class Layer:
         self.visible = visible
         self.opacity = opacity
 
+    @property
+    def shows(self) -> bool:
+        """Whether anything painted on it can be seen: not hidden, nor faded to nothing."""
+        return self.visible and self.opacity > 0
+
+    def copy(self) -> Layer:
+        """The same layer with pixels of its own, which later painting does not reach."""
+        return Layer(copy_surface(self.surface), self.name, self.visible, self.opacity)
+
 
 @dataclass(frozen=True)
 class LayerState:
@@ -236,52 +264,50 @@ Damage = list[tuple[Layer, tuple[int, int, int, int] | None]] | None
 
 
 class Patch:
-    """A step of the history that puts back one rectangle of one layer's pixels.
+    """A step of the history that puts back the pixels of one layer that an edit changed.
 
-    A change that altered nothing has no pixels at all.
+    They are kept in pieces, each a rectangle with its top-left corner: see
+    changed_pieces(). A change that altered nothing has none.
     """
 
-    __slots__ = ("layer", "x", "y", "pixels")
+    __slots__ = ("layer", "pieces")
 
-    def __init__(self, layer: Layer, x: int, y: int, pixels: cairo.ImageSurface | None):
-        self.layer, self.x, self.y, self.pixels = layer, x, y, pixels
+    def __init__(self, layer: Layer, pieces: list[tuple[int, int, cairo.ImageSurface]]):
+        self.layer, self.pieces = layer, pieces
 
     @property
     def nbytes(self) -> int:
-        return surface_bytes(self.pixels) if self.pixels is not None else 0
-
-    @property
-    def rect(self) -> tuple[int, int, int, int]:
-        if self.pixels is None:
-            return (self.x, self.y, 0, 0)
-        return (self.x, self.y, self.pixels.get_width(), self.pixels.get_height())
+        return sum(surface_bytes(pixels) for _x, _y, pixels in self.pieces)
 
     def damage(self) -> Damage:
-        return [] if self.pixels is None else [(self.layer, self.rect)]
+        return [
+            (self.layer, (x, y, pixels.get_width(), pixels.get_height()))
+            for x, y, pixels in self.pieces
+        ]
 
     def apply(self, document: Document) -> Patch:
         """Put the pixels back; returns the patch that reverses it."""
-        if self.pixels is None:
-            return self
         surface = self.layer.surface
-        width, height = self.pixels.get_width(), self.pixels.get_height()
-        reverse = Patch(self.layer, self.x, self.y, crop_surface(surface, self.x, self.y, width, height))
+        reverse = []
         cr = cairo.Context(surface)
         cr.set_operator(cairo.OPERATOR_SOURCE)
-        cr.set_source_surface(self.pixels, self.x, self.y)
-        cr.rectangle(self.x, self.y, width, height)
-        cr.fill()
-        return reverse
+        for x, y, pixels in self.pieces:
+            width, height = pixels.get_width(), pixels.get_height()
+            reverse.append((x, y, crop_surface(surface, x, y, width, height)))
+            cr.set_source_surface(pixels, x, y)
+            cr.rectangle(x, y, width, height)
+            cr.fill()
+        return Patch(self.layer, reverse)
 
 
 def patch_between(
     layer: Layer, before: cairo.ImageSurface, after: cairo.ImageSurface
 ) -> Patch | None:
     """What it takes to turn a layer's `after` back into `before`, or None if they are the same."""
-    rect = changed_rect(before, after)
-    if rect is None:
+    pieces = changed_pieces(before, after)
+    if not pieces:
         return None
-    return Patch(layer, rect[0], rect[1], crop_surface(before, *rect))
+    return Patch(layer, [(rect[0], rect[1], crop_surface(before, *rect)) for rect in pieces])
 
 
 class StackChange:
@@ -354,6 +380,12 @@ class Document(GObject.Object):
         # The top layer, as for an image opened with several.
         self.current = len(self.layers) - 1
         self.file = None
+        # What the canvas is made of: what the bottom layer gets where it grows
+        # or is emptied. White, unless the picture was started see-through.
+        self.backdrop = WHITE
+        # What its file holds that Tempera has no place for, such as how the
+        # layers blend: saving over the file would lose it for good.
+        self.lost: tuple[str, ...] = ()
         self._undo: list[Patch | StackChange] = []
         self._redo: list[Patch | StackChange] = []
         # How many undo steps deep the saved image sits, so undoing back to it
@@ -435,9 +467,7 @@ class Document(GObject.Object):
         return flatten(self.layers, x, y, width, height)
 
     def to_pixbuf(self) -> GdkPixbuf.Pixbuf:
-        flattened = self.flattened()
-        flattened.flush()
-        return Gdk.pixbuf_get_from_surface(flattened, 0, 0, self.width, self.height)
+        return pixbuf_from_surface(self.flattened())
 
     # History
 
@@ -486,7 +516,7 @@ class Document(GObject.Object):
         if patch is None:
             if not keep_unchanged:
                 return
-            patch = Patch(layer, 0, 0, None)
+            patch = Patch(layer, [])
         self._record(patch)
         self._changed(patch.damage())
 
@@ -595,13 +625,8 @@ class Document(GObject.Object):
         """A copy of the current layer just above it, which becomes the current one."""
         if len(self.layers) >= self.layer_limit:
             return False
-        original = self.layer
-        copy = Layer(
-            copy_surface(original.surface),
-            _("{name} copy").format(name=original.name),
-            original.visible,
-            original.opacity,
-        )
+        copy = self.layer.copy()
+        copy.name = _("{name} copy").format(name=copy.name)
 
         def change():
             self.layers.insert(self.current + 1, copy)
@@ -708,10 +733,10 @@ class Document(GObject.Object):
     # Edits to the whole image, every layer at once
 
     def _vacated_fill(self, index: int | None = None) -> tuple[float, float, float, float]:
-        """What a layer's emptied pixels become: white at the bottom, where the
-        canvas is made of it, and see-through above, so what is beneath shows."""
+        """What a layer's emptied pixels become: at the bottom what the canvas is
+        made of, white as a rule, and see-through above, so what is beneath shows."""
         index = self.current if index is None else index
-        return WHITE if index == 0 else TRANSPARENT
+        return self.backdrop if index == 0 else TRANSPARENT
 
     @staticmethod
     def _resized_surface(
@@ -742,10 +767,11 @@ class Document(GObject.Object):
         """Whether the picture could be this size with the layers it has."""
         return len(self.layers) <= layer_limit(width, height)
 
-    def resize(self, width: int, height: int, fill=WHITE) -> bool:
+    def resize(self, width: int, height: int, fill=None) -> bool:
         """Grow or crop the canvas, keeping the existing pixels anchored top-left.
 
-        The bottom layer grows with `fill`, the ones above it with nothing.
+        The bottom layer grows with `fill`, or else with what the canvas is
+        made of, and the ones above it with nothing.
         Returns False, changing nothing, when its layers would take too much
         memory at that size.
         """
@@ -755,6 +781,7 @@ class Document(GObject.Object):
             return True
         if not self.fits(width, height):
             return False
+        fill = self.backdrop if fill is None else fill
         self._transform(
             lambda index, surface: self._resized_surface(
                 surface, width, height, fill if index == 0 else TRANSPARENT

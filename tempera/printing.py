@@ -20,7 +20,7 @@ from gi.repository import Adw, GLib, Gtk
 
 from . import interface_size
 from .document import copy_surface
-from .i18n import _
+from .i18n import _, ngettext
 from .settings import config_dir
 
 FIT = "fit"
@@ -334,7 +334,11 @@ class PrintDialog(Adw.AlertDialog):
         if pages > 1:
             # Translators: shown when an image printed at its actual size does not fit one page.
             self.pages_label.set_label(
-                _("Too big for one page: prints on {count} pages").format(count=pages)
+                ngettext(
+                    "Too big for one page: prints on {count} page",
+                    "Too big for one page: prints on {count} pages",
+                    pages,
+                ).format(count=pages)
             )
         else:
             self.pages_label.set_label("")

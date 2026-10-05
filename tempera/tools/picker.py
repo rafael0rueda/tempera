@@ -9,6 +9,7 @@ from .base import Tool, ToolContext
 
 class PickerTool(Tool):
     id = "picker"
+    options_page = "picker"
     label = _("Color Picker")
     icon_name = "tempera-color-picker-symbolic"
     tip_icon_name = "tempera-color-picker-tip-symbolic"

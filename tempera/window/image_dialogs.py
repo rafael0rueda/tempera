@@ -5,14 +5,12 @@
 
 from __future__ import annotations
 
-from gi.repository import Adw, Gtk
+from gi.repository import Gtk
 
 from ..canvas import too_large_message
-from ..document import DEFAULT_HEIGHT, DEFAULT_WIDTH, MAX_SIZE, Document, new_surface
+from ..document import MAX_SIZE, TRANSPARENT, WHITE, Document, new_surface
 from ..i18n import _
 
-WHITE = (1.0, 1.0, 1.0, 1.0)
-TRANSPARENT = (0.0, 0.0, 0.0, 0.0)
 
 
 def scaled_side(original: int, percent: float) -> int:
@@ -36,44 +34,47 @@ class ImageDialogsMixin:
             spin.set_value(value)
             # Wide enough for the largest allowed size in any interface font.
             spin.set_width_chars(len(str(MAX_SIZE)) + 1)
+            # Enter in either field accepts the dialog.
+            spin.set_activates_default(True)
             spins.append(spin)
         width_spin, height_spin = spins
 
         grid = Gtk.Grid(row_spacing=6, column_spacing=12, margin_top=12)
-        grid.attach(Gtk.Label(label=_("Width"), xalign=1), 0, 0, 1, 1)
-        grid.attach(width_spin, 1, 0, 1, 1)
-        grid.attach(Gtk.Label(label=_("Height"), xalign=1), 0, 1, 1, 1)
-        grid.attach(height_spin, 1, 1, 1, 1)
+        for row, (caption, spin) in enumerate(((_("Width"), width_spin), (_("Height"), height_spin))):
+            grid.attach(Gtk.Label(label=caption, xalign=1), 0, row, 1, 1)
+            grid.attach(spin, 1, row, 1, 1)
+            # Read out with the field, which on its own is only a number.
+            spin.update_property([Gtk.AccessibleProperty.LABEL], [caption])
         if extra is not None:
             grid.attach(extra, 0, 2, 2, 1)
 
-        dialog = Adw.AlertDialog(heading=heading, body=body)
-        dialog.set_extra_child(grid)
-        dialog.add_response("cancel", _("Cancel"))
-        dialog.add_response(accept_id, accept_label)
-        dialog.set_response_appearance(accept_id, Adw.ResponseAppearance.SUGGESTED)
-        dialog.set_default_response(accept_id)
-        dialog.set_close_response("cancel")
-
-        def on_response(_dialog, response: str) -> None:
-            if response == accept_id:
-                on_accept(int(width_spin.get_value()), int(height_spin.get_value()))
-
-        dialog.connect("response", on_response)
-        dialog.present(self)
+        self.ask(
+            heading,
+            body,
+            accept_id,
+            accept_label,
+            lambda: on_accept(int(width_spin.get_value()), int(height_spin.get_value())),
+            extra=grid,
+        )
 
     def _prompt_new_size(self) -> None:
-        transparent = Gtk.CheckButton(label=_("Transparent background"))
+        last_width, last_height, last_transparent = self._new_image
+        transparent = Gtk.CheckButton(label=_("Transparent background"), active=last_transparent)
         transparent.set_tooltip_text(_("Start with nothing rather than white"))
 
         def create(width: int, height: int) -> None:
+            # Offered again the next time: the same size is often wanted twice.
+            self._new_image = (width, height, transparent.get_active())
             fill = TRANSPARENT if transparent.get_active() else WHITE
-            self._set_document(Document(new_surface(width, height, fill)))
+            document = Document(new_surface(width, height, fill))
+            # Where it later grows, it grows with the same.
+            document.backdrop = fill
+            self._set_document(document)
 
         self._prompt_size(
-            _("New image"),
+            _("New Image"),
             _("Choose a canvas size in pixels."),
-            (DEFAULT_WIDTH, DEFAULT_HEIGHT),
+            (last_width, last_height),
             "create",
             _("Create"),
             create,
@@ -85,8 +86,10 @@ class ImageDialogsMixin:
         document = self.canvas.document
 
         self._prompt_size(
-            _("Canvas size"),
-            _("The image keeps its top-left corner; extra space is filled with white."),
+            _("Canvas Size"),
+            _("The image keeps its top-left corner; extra space is left see-through.")
+            if document.backdrop[3] == 0
+            else _("The image keeps its top-left corner; extra space is filled with white."),
             (document.width, document.height),
             "resize",
             _("Resize"),
@@ -116,6 +119,7 @@ class ImageDialogsMixin:
         for spin, side in zip(spins, original):
             spin.set_value(side)
             spin.set_width_chars(len(str(MAX_SIZE)) + 1)
+            spin.set_activates_default(True)
         keep_ratio = Gtk.CheckButton(label=_("Keep aspect ratio"), active=True)
 
         syncing = False
@@ -156,34 +160,28 @@ class ImageDialogsMixin:
         percent.connect("toggled", switch_units)
 
         grid = Gtk.Grid(row_spacing=6, column_spacing=12, margin_top=12)
-        grid.attach(Gtk.Label(label=_("Width"), xalign=1), 0, 0, 1, 1)
-        grid.attach(width_spin, 1, 0, 1, 1)
-        grid.attach(Gtk.Label(label=_("Height"), xalign=1), 0, 1, 1, 1)
-        grid.attach(height_spin, 1, 1, 1, 1)
+        for row, (caption, spin) in enumerate(((_("Width"), width_spin), (_("Height"), height_spin))):
+            grid.attach(Gtk.Label(label=caption, xalign=1), 0, row, 1, 1)
+            grid.attach(spin, 1, row, 1, 1)
+            # Read out with the field, which on its own is only a number.
+            spin.update_property([Gtk.AccessibleProperty.LABEL], [caption])
         grid.attach(keep_ratio, 0, 2, 2, 1)
 
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         content.append(units)
         content.append(grid)
 
-        dialog = Adw.AlertDialog(
-            heading=_("Resize image"),
-            body=_("The whole picture is stretched or shrunk to the new size."),
-        )
-        dialog.set_extra_child(content)
-        dialog.add_response("cancel", _("Cancel"))
-        dialog.add_response("scale", _("Resize"))
-        dialog.set_response_appearance("scale", Adw.ResponseAppearance.SUGGESTED)
-        dialog.set_default_response("scale")
-        dialog.set_close_response("cancel")
-
-        def on_response(_dialog, response: str) -> None:
-            if response != "scale":
-                return
+        def resize() -> None:
             values = [spin.get_value() for spin in spins]
             if in_percent():
                 values = [scaled_side(side, value) for side, value in zip(original, values)]
             self._say_if_too_large(document, document.scale(int(values[0]), int(values[1])))
 
-        dialog.connect("response", on_response)
-        dialog.present(self)
+        self.ask(
+            _("Resize Image"),
+            _("The whole picture is stretched or shrunk to the new size."),
+            "scale",
+            _("Resize"),
+            resize,
+            extra=content,
+        )

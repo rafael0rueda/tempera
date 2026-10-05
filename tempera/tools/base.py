@@ -135,6 +135,11 @@ class Tool:
     # Whether the size in the tool options applies: a brush width, a line
     # width, or for text the font size.
     sized = False
+    # Which page of the options bar goes with the tool: see the pages the
+    # window builds. Most tools have nothing but the size to set.
+    options_page = "none"
+    # Which of the canvas's tolerances the tool works to, if it matches colours.
+    tolerance = ""
     # Above 0, the canvas calls repeat() this often (in ms) while the button is
     # held, even when the pointer does not move.
     repeat_ms = 0

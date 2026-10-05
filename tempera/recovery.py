@@ -29,7 +29,7 @@ from pathlib import Path
 import cairo
 from gi.repository import GLib
 
-from .document import Document, Layer, copy_surface
+from .document import Document, Layer
 from .i18n import _
 from .openraster import read_openraster, write_openraster
 
@@ -125,10 +125,7 @@ class RecoverySlot:
                 done(_("the folder for it cannot be written to"))
             return
         # Copied here, so drawing on can carry on while the copy is written.
-        layers = [
-            Layer(copy_surface(layer.surface), layer.name, layer.visible, layer.opacity)
-            for layer in document.layers
-        ]
+        layers = [layer.copy() for layer in document.layers]
         info = dict(
             info,
             version=FORMAT_VERSION,

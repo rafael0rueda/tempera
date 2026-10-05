@@ -1,14 +1,15 @@
 # SPDX-FileCopyrightText: 2026 Rafael Rueda
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-from ..i18n import _
+from ..i18n import C_
 from .base import Tool, ToolContext
 
 
 class TextTool(Tool):
     id = "text"
+    options_page = "text"
     sized = True
-    label = _("Text")
+    label = C_("tool", "Text")
     icon_name = "tempera-text-symbolic"
     # Typing is what changes the image, and that happens long after the click,
     # so the canvas takes it from here and commits the text itself.

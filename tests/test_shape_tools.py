@@ -21,6 +21,7 @@ from tempera.tools.shapes import SHAPE_CLASSES, ShapesTool
 from tempera.tools.star import StarTool, star_points
 from tempera.tools.triangle import TriangleTool
 
+from driving import FakeGesture
 from pixels import pixel_at
 
 WHITE = (1.0, 1.0, 1.0, 1.0)
@@ -392,18 +393,6 @@ def test_a_curve_has_a_grip_on_each_end_and_each_bend():
 
 
 # The canvas, placing a shape over several clicks
-
-
-class FakeGesture:
-    def __init__(self, button=Gdk.BUTTON_PRIMARY, state=Gdk.ModifierType(0)):
-        self.button = button
-        self.state = state
-
-    def get_current_button(self):
-        return self.button
-
-    def get_current_event_state(self):
-        return self.state
 
 
 def canvas_drag(canvas, start, end, button=Gdk.BUTTON_PRIMARY):

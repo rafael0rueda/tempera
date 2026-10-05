@@ -4,6 +4,7 @@
 from gi.repository import Gtk
 
 from tempera.canvas import Canvas, CanvasFrame
+from tempera.canvas.view import CANVAS_MARGIN
 from tempera.color import ColorState
 from tempera.document import Document
 
@@ -73,7 +74,8 @@ def test_the_shadow_lies_under_the_image():
     outlines = shadow_outlines(snapshot.to_node())
 
     assert outlines
-    x, y = frame.offset
+    # The image sits inside the margin the stylesheet gives the canvas.
+    x, y = frame.offset[0] + CANVAS_MARGIN, frame.offset[1] + CANVAS_MARGIN
     for bounds in outlines:
         assert (bounds.origin.x, bounds.origin.y) == (x, y)
         assert (bounds.size.width, bounds.size.height) == (200, 150)

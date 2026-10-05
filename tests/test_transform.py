@@ -14,6 +14,7 @@ from tempera.canvas.floating import ROTATE_GRIP_OFFSET
 from tempera.color import ColorState
 from tempera.document import Document, new_surface
 
+from driving import drag
 from pixels import paint_pixel, pixel_at
 
 WHITE = (1.0, 1.0, 1.0, 1.0)
@@ -128,17 +129,6 @@ def test_the_grip_that_turns_sits_above_or_else_below():
 # On the canvas
 
 
-class FakeGesture:
-    def __init__(self, state=Gdk.ModifierType(0)):
-        self.state = state
-
-    def get_current_button(self):
-        return Gdk.BUTTON_PRIMARY
-
-    def get_current_event_state(self):
-        return self.state
-
-
 @pytest.fixture
 def canvas():
     """A red-and-blue block at (40, 40)-(80, 60) on white, selected."""
@@ -150,13 +140,6 @@ def canvas():
     canvas.select_tool("select")
     canvas.select_region(40, 40, 40, 20)
     return canvas
-
-
-def drag(canvas, start, end, state=Gdk.ModifierType(0)):
-    gesture = FakeGesture(state)
-    canvas._on_drag_begin(gesture, *start)
-    canvas._on_drag_update(gesture, end[0] - start[0], end[1] - start[1])
-    canvas._on_drag_end(gesture, end[0] - start[0], end[1] - start[1])
 
 
 def test_a_selection_has_a_grip_to_turn_it_by(canvas):

@@ -7,12 +7,14 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+import weakref
+
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 
 from .. import APP_NAME, interface_size, recovery, shortcuts
 from ..canvas import PIXEL_GRID_ZOOM, Canvas
 from ..color import ColorBar, ColorState
-from ..document import Document
+from ..document import DEFAULT_HEIGHT, DEFAULT_WIDTH, Document
 from ..i18n import _
 from ..settings import load_palette_position, save_settings
 from ..preferences import PreferencesDialog
@@ -87,6 +89,7 @@ class TemperaWindow(
         self.canvas.connect("pointer-moved", self._on_pointer_moved)
         self.canvas.connect("pointer-left", lambda *_args: self._cursor_label.set_label(""))
         self.canvas.connect("message", lambda _canvas, message: self.show_toast(message))
+        self.canvas.connect("layer-hidden", lambda _canvas: self._say_layer_hidden())
         self._closing = False
         # A copy of unsaved work in Tempera's data folder, so a crash does not
         # lose it. Counting changes tells whether the last copy is out of date.
@@ -94,6 +97,9 @@ class TemperaWindow(
         self._changes = 0
         self._kept_changes: int | None = None
         self._recovery_failed = False
+        # The size and background last asked for a new image.
+        self._new_image = (DEFAULT_WIDTH, DEFAULT_HEIGHT, False)
+        self._hidden_toast: Adw.Toast | None = None
         self._recovery_timer = GLib.timeout_add_seconds(
             recovery.INTERVAL, self._keep_recovery_copy
         )
@@ -101,13 +107,14 @@ class TemperaWindow(
         # destroys it once nothing holds it, which may be never.
         self.connect("destroy", self._end_recovery)
         self._busy = False
-        self._typing = False
+        self._typing = shortcuts.CANVAS
         self._syncing_size = False
         self._last_jpeg_quality = 90
         # The picture already told that saving it as PNG or JPEG merges its layers.
-        self._told_of_merging: Document | None = None
+        # The picture whose layers the user agreed to save merged, if still open.
+        self._flat_agreed: weakref.ref | None = None
         # The picture last exported, and where to, for the next export to start from.
-        self._last_export: tuple[Document, Gio.File] | None = None
+        self._last_export: tuple[weakref.ref, Gio.File] | None = None
 
         self._title = Adw.WindowTitle(title=APP_NAME)
         self.toasts = Adw.ToastOverlay()
@@ -115,7 +122,7 @@ class TemperaWindow(
         # Widgets whose tooltip names a shortcut: (widget, text, action).
         self._shortcut_tooltips: list[tuple[Gtk.Widget, str, str]] = []
         self._color_bar = ColorBar(self.colors)
-        self._add_shortcut_tooltip(self._color_bar.swap_button, "Swap colors", "win.swap-colors")
+        self._add_shortcut_tooltip(self._color_bar.swap_button, "win.swap-colors")
         # Where the palette can go: position -> (slot it sits in, strip to show).
         self._palette_slots: dict[str, tuple[Gtk.Box, Gtk.Widget | None]] = {}
 
@@ -136,6 +143,9 @@ class TemperaWindow(
         self.connect("close-request", self._on_close_request)
         # Typing into a field, as into the canvas, needs the one-key shortcuts out of the way.
         self.connect("notify::focus-widget", lambda *_args: self._sync_typing_accels())
+        # A dialog over the picture takes every key until it is answered.
+        self.connect("notify::visible-dialog", lambda *_args: self._sync_typing_accels())
+        self._keep_keys_on_the_canvas(self.get_content())
 
     def _install_actions(self) -> None:
         simple_actions = {
@@ -368,16 +378,39 @@ class TemperaWindow(
     def _on_floating_changed(self, *_args) -> None:
         self._sync_state()
         self._sync_typing_accels()
+        # Pixels that float can be cut; a text box being typed in takes pasted text.
+        self._sync_selection_actions()
+        self._sync_paste_action()
 
     def _sync_typing_accels(self) -> None:
         """Give the one-key shortcuts back and forth as a text box comes and goes."""
-        typing = shortcuts.is_typing_in(self)
+        typing = shortcuts.keys_claimed_in(self)
         if typing == self._typing:
             return
         self._typing = typing
         shortcuts.apply_accels(self.get_application())
 
-    def _add_shortcut_tooltip(self, widget: Gtk.Widget, text: str, action: str) -> None:
+    def _keep_keys_on_the_canvas(self, widget: Gtk.Widget) -> None:
+        """Leave the keyboard with the canvas when a button or a slider is clicked.
+
+        Enter then still lands the shape whose fill was just switched on, and
+        the arrows still nudge it. Tab reaches every control as before, and a
+        field still takes the keys when clicked: it is there to be typed in.
+        """
+        if isinstance(widget, (Gtk.Button, Gtk.ToggleButton, Gtk.MenuButton, Gtk.CheckButton, Gtk.Scale)):
+            widget.set_focus_on_click(False)
+        child = widget.get_first_child()
+        while child is not None:
+            self._keep_keys_on_the_canvas(child)
+            child = child.get_next_sibling()
+
+    def _add_shortcut_tooltip(self, widget: Gtk.Widget, action: str) -> None:
+        """Name a control after the action it stands for, with the key for it.
+
+        The name is the one the shortcuts list gives the action, so the two
+        never drift apart, and it is translated along with that list.
+        """
+        text = shortcuts.SHORTCUTS[action].title
         self._shortcut_tooltips.append((widget, text, action))
         widget.set_tooltip_text(shortcuts.tooltip(text, action))
         # A tooltip is only a description; a button showing an icon needs a name
@@ -388,6 +421,57 @@ class TemperaWindow(
         """Show the current keys after the user changes a shortcut."""
         for widget, text, action in self._shortcut_tooltips:
             widget.set_tooltip_text(shortcuts.tooltip(text, action))
+
+    def ask(
+        self,
+        heading: str,
+        body: str,
+        answer: str,
+        label: str,
+        on_accept,
+        extra: Gtk.Widget | None = None,
+        destructive: bool = False,
+    ) -> Adw.AlertDialog:
+        """Ask a question with one way to go ahead and Cancel, which Esc also gives.
+
+        `answer` names the response that goes ahead and `label` is what its
+        button says; `on_accept` is called if it is the one chosen. Enter
+        chooses it too, unless it is `destructive`: then Enter cancels.
+        `extra` goes under the question, for something to fill in.
+        """
+        dialog = Adw.AlertDialog(heading=heading, body=body)
+        if extra is not None:
+            dialog.set_extra_child(extra)
+        dialog.add_response("cancel", _("Cancel"))
+        dialog.add_response(answer, label)
+        dialog.set_response_appearance(
+            answer,
+            Adw.ResponseAppearance.DESTRUCTIVE if destructive else Adw.ResponseAppearance.SUGGESTED,
+        )
+        dialog.set_default_response("cancel" if destructive else answer)
+        dialog.set_close_response("cancel")
+        dialog.connect("response", lambda _dialog, response: response == answer and on_accept())
+        dialog.present(self)
+        return dialog
+
+    def show_failure(self, heading: str, message: str, save_as: bool = False) -> None:
+        """Say that something the user asked for could not be done, and why.
+
+        A dialog rather than a toast: a save that failed must not slip by
+        unread. After one, `save_as` offers to try somewhere else.
+        """
+        dialog = Adw.AlertDialog(heading=heading, body=message)
+        dialog.add_response("close", _("Close"))
+        dialog.set_close_response("close")
+        dialog.set_default_response("close")
+        if save_as:
+            dialog.add_response("save-as", _("Save As…"))
+            dialog.set_response_appearance("save-as", Adw.ResponseAppearance.SUGGESTED)
+            dialog.set_default_response("save-as")
+            dialog.connect(
+                "response", lambda _dialog, response: response == "save-as" and self._save_as()
+            )
+        dialog.present(self)
 
     def show_toast(self, message: str) -> None:
         # Messages carry file names and loader errors, which are not markup.

@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from gi.repository import Gdk, Gtk
 
 from . import settings
-from .i18n import _
+from .i18n import C_, _
 from .tools import SHAPE_CLASSES, TOOL_CLASSES
 
 
@@ -86,7 +86,7 @@ SHORTCUT_GROUPS: list[tuple[str, list[Shortcut]]] = [
             Shortcut("win.resize", _("Canvas Size"), ("<Control>e",)),
             Shortcut("win.scale", _("Resize Image"), ("<Control>r",)),
             Shortcut("win.crop", _("Crop to Selection"), ()),
-            Shortcut("win.rotate-cw", _("Rotate Clockwise"), ()),
+            Shortcut("win.rotate-cw", _("Rotate Clockwise"), ("<Control><Alt>r",)),
             Shortcut("win.rotate-ccw", _("Rotate Counterclockwise"), ("<Control><Shift>r",)),
             Shortcut("win.flip-horizontal", _("Flip Horizontal"), ()),
             Shortcut("win.flip-vertical", _("Flip Vertical"), ()),
@@ -104,7 +104,7 @@ SHORTCUT_GROUPS: list[tuple[str, list[Shortcut]]] = [
         ],
     ),
     (
-        _("Text"),
+        C_("shortcuts", "Text"),
         [
             Shortcut("win.text-bold", _("Bold"), ("<Control>b",)),
             Shortcut("win.text-italic", _("Italic"), ("<Control>i",)),
@@ -140,10 +140,14 @@ SHORTCUT_GROUPS: list[tuple[str, list[Shortcut]]] = [
                 (TOOL_KEYS[tool.id],) if tool.id in TOOL_KEYS else (),
             )
             for tool in TOOL_CLASSES
+        ]
+        + [
+            Shortcut("win.size-down", _("Smaller Brush or Text"), ("bracketleft",)),
+            Shortcut("win.size-up", _("Bigger Brush or Text"), ("bracketright",)),
         ],
     ),
     (
-        _("Shapes"),
+        C_("shortcuts", "Shapes"),
         [
             Shortcut(f"win.shape::{shape.id}", shape.label, (SHAPE_KEYS[shape.id],))
             for shape in SHAPE_CLASSES
@@ -162,8 +166,7 @@ SHORTCUT_GROUPS: list[tuple[str, list[Shortcut]]] = [
         _("Colors"),
         [
             Shortcut("win.swap-colors", _("Swap Colors"), ("x",)),
-            Shortcut("win.size-down", _("Smaller Brush or Text"), ("bracketleft",)),
-            Shortcut("win.size-up", _("Bigger Brush or Text"), ("bracketright",)),
+            Shortcut("win.pick-from-screen", _("Pick a Color From the Screen"), ()),
         ],
     ),
     (
@@ -171,6 +174,8 @@ SHORTCUT_GROUPS: list[tuple[str, list[Shortcut]]] = [
         [
             Shortcut("win.preferences", _("Preferences"), ("<Control>comma",)),
             Shortcut("win.shortcuts", _("Keyboard Shortcuts"), ("<Control>question",)),
+            Shortcut("app.help", _("Help"), ("F1",)),
+            Shortcut("window.close", _("Close Window"), ("<Control>w",)),
             Shortcut("app.quit", _("Quit"), ("<Control>q",)),
         ],
     ),
@@ -182,10 +187,10 @@ SHORTCUTS = {shortcut.action: shortcut for _group, items in SHORTCUT_GROUPS for 
 # They are listed for reference but cannot be changed.
 CANVAS_KEYS = [
     (_("Nudge a selection or paste"), _("Hold Shift to move 10 pixels"), "Left Right Up Down"),
-    (_("Land a paste"), None, "Return"),
+    (_("Land a paste or a shape"), None, "Return"),
     (_("Land typed text"), None, "<Control>Return"),
-    (_("Drop a selection, discard a paste or text"), None, "Escape"),
-    (_("Clear a selection"), None, "Delete"),
+    (_("Drop a selection, discard a paste, a shape or text"), None, "Escape"),
+    (_("Clear a selection"), None, "Delete BackSpace"),
 ]
 
 _RESERVED_KEYS = {
@@ -367,28 +372,57 @@ def reset(application: Gtk.Application, action: str | None = None) -> None:
 # Applying them
 
 
-def is_typing_in(window: Gtk.Window) -> bool:
-    """Whether a window is taking typed text: into a text box on the canvas, or
-    into a field, such as a colour's hex value or a layer's name."""
-    if getattr(getattr(window, "canvas", None), "is_typing", False):
-        return True
+# What a window's keys are for at the moment, from the least claim on them to the most.
+CANVAS, TEXT, FIELD, DIALOG = range(4)
+
+# What a field does for itself with the same keys: there they edit the text
+# being typed, not the picture behind it.
+EDITING_ACTIONS = {"win.undo", "win.redo", "win.select-all", "win.cut", "win.copy", "win.paste"}
+# What still works with a dialog open over the picture.
+DIALOG_ACTIONS = {"app.quit", "app.help"}
+
+
+def keys_claimed_in(window: Gtk.Window) -> int:
+    """What a window is doing with the keyboard: painting, typing text onto the
+    canvas, typing into a field such as a colour's hex value or a layer's name,
+    or answering a dialog."""
+    if getattr(window, "get_visible_dialog", lambda: None)() is not None:
+        return DIALOG
     # The part of an entry or a spin button that takes the keys.
-    return isinstance(window.get_focus(), (Gtk.Text, Gtk.TextView))
+    if isinstance(window.get_focus(), (Gtk.Text, Gtk.TextView)):
+        return FIELD
+    if getattr(getattr(window, "canvas", None), "is_typing", False):
+        return TEXT
+    return CANVAS
+
+
+def is_typing_in(window: Gtk.Window) -> bool:
+    """Whether a window is taking typed text, onto the canvas or into a field."""
+    return keys_claimed_in(window) != CANVAS
 
 
 def apply_accels(application: Gtk.Application) -> None:
     """Register every shortcut with the application.
 
-    Bare keys are left out while any window is taking typed text, so that
-    typing an "s" does not switch to the select tool. GTK hands a window's
-    shortcuts the keys before the field with the focus, so they would
-    otherwise never reach it.
+    GTK hands a window's shortcuts the keys before the field with the focus,
+    so whatever a field or a dialog needs for itself has to be left out while
+    it is there. Bare keys go while any window is taking typed text, so that
+    typing an "s" does not switch to the select tool; in a field the keys
+    that edit, such as Ctrl+Z and Ctrl+A, go as well, and under a dialog all
+    of them, since none should reach the picture behind it.
     """
-    typing = any(is_typing_in(window) for window in application.get_windows())
+    claim = max((keys_claimed_in(window) for window in application.get_windows()), default=CANVAS)
     overrides = _overrides()
     for action in SHORTCUTS:
         keys = [] if _suspended else keys_for(action, overrides)
-        if typing:
+        if claim == DIALOG and action not in DIALOG_ACTIONS:
+            keys = []
+        elif claim == FIELD and action in EDITING_ACTIONS:
+            keys = []
+        elif claim == TEXT and action == "win.select-all":
+            # Nothing to select in a text box, and landing the text would be a surprise.
+            keys = []
+        elif claim != CANVAS:
             keys = [key for key in keys if not is_bare(key)]
         application.set_accels_for_action(action, keys)
 

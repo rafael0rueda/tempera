@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from gi.repository import Gdk, GLib, Gtk
+from gi.repository import Gdk, GLib, Gtk, Pango
 
 from .. import interface_size
 from ..canvas import CanvasFrame
@@ -122,13 +122,18 @@ class LayoutMixin:
             label.add_css_class("dim-label")
             bar.append(label)
 
+        # Which layer the tools paint on, when the picture has more than one.
+        self._layer_label = Gtk.Label(visible=False, ellipsize=Pango.EllipsizeMode.END, max_width_chars=24)
+        self._layer_label.add_css_class("dim-label")
+        bar.append(self._layer_label)
+
         # The size is also the header's subtitle, which renders too small to
         # read at larger interface font sizes; here it also opens Canvas Size.
         self._canvas_size_label = Gtk.Label()
         self._canvas_size_label.add_css_class("numeric")
         self._canvas_size_label.add_css_class("dim-label")
         button = Gtk.Button(child=self._canvas_size_label, valign=Gtk.Align.CENTER)
-        self._add_shortcut_tooltip(button, "Canvas size", "win.resize")
+        self._add_shortcut_tooltip(button, "win.resize")
         button.add_css_class("flat")
         button.add_css_class("tempera-status-button")
         button.set_action_name("win.resize")
@@ -140,7 +145,7 @@ class LayoutMixin:
         # Wide enough for "800%", so the buttons either side stay put.
         self._zoom_label.set_width_chars(5)
         zoom_button = Gtk.Button(child=self._zoom_label)
-        self._add_shortcut_tooltip(zoom_button, "Reset zoom", "win.zoom-reset")
+        self._add_shortcut_tooltip(zoom_button, "win.zoom-reset")
         zoom_button.set_action_name("win.zoom-reset")
         # Scrolling over the zoom level steps through the zoom presets. Discrete,
         # so a touchpad swipe moves one level at a time rather than racing.
@@ -150,14 +155,14 @@ class LayoutMixin:
         )
         zoom_scroll.connect("scroll", self._on_zoom_label_scroll)
         zoom_button.add_controller(zoom_scroll)
-        for widget, icon, text, action in (
-            (Gtk.Button(), "tempera-zoom-out-symbolic", "Zoom out", "win.zoom-out"),
-            (zoom_button, None, None, None),
-            (Gtk.Button(), "tempera-zoom-in-symbolic", "Zoom in", "win.zoom-in"),
+        for widget, icon, action in (
+            (Gtk.Button(), "tempera-zoom-out-symbolic", "win.zoom-out"),
+            (zoom_button, None, None),
+            (Gtk.Button(), "tempera-zoom-in-symbolic", "win.zoom-in"),
         ):
             if icon is not None:
                 widget.set_icon_name(icon)
-                self._add_shortcut_tooltip(widget, text, action)
+                self._add_shortcut_tooltip(widget, action)
                 widget.set_action_name(action)
             widget.add_css_class("flat")
             widget.add_css_class("tempera-status-button")
@@ -174,7 +179,7 @@ class LayoutMixin:
         tools = Gtk.Grid(row_spacing=4, column_spacing=4, halign=Gtk.Align.CENTER)
         for index, tool in enumerate(SIDEBAR_TOOL_CLASSES):
             button = Gtk.ToggleButton(child=ToolIcon(tool.icon_name, tool.tip_icon_name, self.colors))
-            self._add_shortcut_tooltip(button, tool.label, f"win.tool::{tool.id}")
+            self._add_shortcut_tooltip(button, f"win.tool::{tool.id}")
             button.add_css_class("flat")
             button.add_css_class("tempera-tool")
             button.set_action_name("win.tool")
@@ -213,7 +218,7 @@ class LayoutMixin:
         button.set_action_target_value(GLib.Variant.new_string(tool.id))
         button.get_child().set_icons(tool.icon_name, tool.tip_icon_name)
         self._shortcut_tooltips = [entry for entry in self._shortcut_tooltips if entry[0] is not button]
-        self._add_shortcut_tooltip(button, tool.label, f"win.tool::{tool.id}")
+        self._add_shortcut_tooltip(button, f"win.tool::{tool.id}")
 
     def _on_palette_position_changed(self, action, value: GLib.Variant) -> None:
         position = value.get_string()
@@ -275,8 +280,14 @@ class LayoutMixin:
         return Gdk.EVENT_STOP
 
     def _on_zoom_changed(self, canvas, zoom: float) -> None:
+        percent = _("{percent}%").format(percent=round(zoom * 100))
         for label in (self._zoom_label, self._menu_zoom_label):
-            label.set_label(f"{round(zoom * 100)}%")
+            label.set_label(percent)
+            # The button shows only the number; say what it is, and what a click does.
+            label.get_parent().update_property(
+                [Gtk.AccessibleProperty.LABEL],
+                [_("Zoom {percent}, reset").format(percent=percent)],
+            )
 
     def _on_pointer_moved(self, canvas, x: float, y: float) -> None:
         self._cursor_label.set_label(_("{x}, {y}").format(x=round(x), y=round(y)))

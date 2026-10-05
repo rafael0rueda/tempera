@@ -6,7 +6,7 @@ from __future__ import annotations
 import cairo
 from gi.repository import Gdk
 
-from ..i18n import _
+from ..i18n import C_
 from ..regions import flood_spans, premultiplied, target_at
 from .base import Tool, ToolContext
 
@@ -57,7 +57,9 @@ def flood_fill(
 
 class FillTool(Tool):
     id = "fill"
-    label = _("Fill")
+    options_page = "fill"
+    tolerance = "fill_tolerance"
+    label = C_("tool", "Fill")
     icon_name = "tempera-fill-symbolic"
     tip_icon_name = "tempera-fill-tip-symbolic"
     background = True

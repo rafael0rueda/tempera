@@ -11,22 +11,12 @@ from tempera.color import ColorState
 from tempera.document import Document, new_surface
 from tempera.text import TextBox, TextStyle
 
+from driving import FakeGesture
 from pixels import pixel_at
 
 RED = (1.0, 0.0, 0.0, 1.0)
 WHITE = (1.0, 1.0, 1.0, 1.0)
 NO_KEYS = Gdk.ModifierType(0)
-
-
-class FakeGesture:
-    def __init__(self, state=NO_KEYS):
-        self.state = state
-
-    def get_current_button(self):
-        return Gdk.BUTTON_PRIMARY
-
-    def get_current_event_state(self):
-        return self.state
 
 
 def make_canvas(size=100) -> Canvas:

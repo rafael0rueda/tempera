@@ -2,23 +2,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 import pytest
-from gi.repository import Adw, Gdk, Gio
+from gi.repository import Gdk
 
 from tempera import settings, shortcuts
 
 SHIFT = Gdk.ModifierType.SHIFT_MASK
 CONTROL = Gdk.ModifierType.CONTROL_MASK
 NONE = Gdk.ModifierType(0)
-
-
-@pytest.fixture(scope="module")
-def application():
-    app = Adw.Application(
-        application_id="io.github.rafael0rueda.Tempera.ShortcutTests",
-        flags=Gio.ApplicationFlags.NON_UNIQUE,
-    )
-    app.register(None)
-    return app
 
 
 @pytest.fixture(autouse=True)
@@ -194,3 +184,10 @@ def test_every_shape_has_its_own_key():
 def test_a_shape_key_changed_in_tempera_1_0_carries_over(settings_file):
     settings_file.write_text("[shortcuts]\nwin.tool::rectangle = <Shift>r\n", encoding="utf-8")
     assert shortcuts.keys_for("win.shape::rectangle") == ["<Shift>r"]
+
+
+def test_help_opens_the_guide_for_this_version():
+    from tempera import VERSION, main
+
+    assert shortcuts.keys_for("app.help") == ["F1"]
+    assert main.GUIDE.endswith(f"/blob/v{VERSION}/USER_GUIDE.md")

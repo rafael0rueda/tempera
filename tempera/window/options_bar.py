@@ -8,15 +8,20 @@ from __future__ import annotations
 from gi.repository import GLib, Gtk, Pango
 
 from ..color import ColorChip
-from ..i18n import _
-from ..text import FONT_SIZE_RANGE, font_size, font_without_size, with_font_size
+from ..i18n import C_, _
+from ..text import (
+    ALIGNMENTS,
+    FONT_SIZE_RANGE,
+    TEXT_SWITCHES,
+    font_size,
+    font_without_size,
+    with_font_size,
+)
 from ..tools import (
     DENSITY_RANGE,
-    PICKER_TOOL_ID,
     SELECTION_SHAPE_IDS,
     SHAPE_CLASSES,
     TOOL_CLASSES,
-    WAND_TOOL_ID,
 )
 
 # The one size slider serves the brush and, with the text tool up, the font.
@@ -75,7 +80,7 @@ class ToolOptionsMixin:
         for shape in SHAPE_CLASSES:
             button = Gtk.ToggleButton(icon_name=shape.icon_name)
             button.add_css_class("tempera-option-toggle")
-            self._add_shortcut_tooltip(button, shape.label, f"win.shape::{shape.id}")
+            self._add_shortcut_tooltip(button, f"win.shape::{shape.id}")
             button.set_action_name("win.shape")
             button.set_action_target_value(GLib.Variant.new_string(shape.id))
             self._shape_picker.append(button)
@@ -115,13 +120,13 @@ class ToolOptionsMixin:
         # for the fill.
         self._outline_chip = ColorChip(filled=False)
         self._outline_toggle = self._option_toggle(
-            _("Outline"), self._outline_chip, _("Draw the outline, in the primary colour")
+            _("Outline"), self._outline_chip, _("Draw the outline, in the primary color")
         )
         self._outline_toggle.set_active(True)
         self._outline_toggle.connect("toggled", self._on_outline_toggled)
         self._fill_chip = ColorChip(filled=True)
         self._fill_toggle = self._option_toggle(
-            _("Fill"), self._fill_chip, _("Fill the inside, in the secondary colour")
+            C_("shape", "Fill"), self._fill_chip, _("Fill the inside, in the secondary color")
         )
         self._fill_toggle.connect("toggled", self._on_fill_toggled)
         self._syncing_shape_options = False
@@ -130,44 +135,49 @@ class ToolOptionsMixin:
         line_styles = self._choice_row(
             "win.line-style",
             (
-                ("solid", "tempera-line-solid-symbolic", "Solid Outline"),
-                ("dashed", "tempera-line-dashed-symbolic", "Dashed Outline"),
-                ("dotted", "tempera-line-dotted-symbolic", "Dotted Outline"),
+                ("solid", "tempera-line-solid-symbolic"),
+                ("dashed", "tempera-line-dashed-symbolic"),
+                ("dotted", "tempera-line-dotted-symbolic"),
             ),
         )
         self._arrow_ends = self._choice_row(
             "win.arrow-ends",
             (
-                ("end", "tempera-arrow-end-symbolic", "Arrowhead at the End"),
-                ("both", "tempera-arrow-both-symbolic", "Arrowheads at Both Ends"),
+                ("end", "tempera-arrow-end-symbolic"),
+                ("both", "tempera-arrow-both-symbolic"),
             ),
         )
         edges = self._choice_row(
             "win.shape-edges",
             (
-                ("smooth", "tempera-smooth-edges-symbolic", "Smooth Edges"),
-                ("crisp", "tempera-crisp-edges-symbolic", "Crisp Edges"),
+                ("smooth", "tempera-smooth-edges-symbolic"),
+                ("crisp", "tempera-crisp-edges-symbolic"),
             ),
         )
-        self._arrow_ends_separator = _bar_separator()
+        # Set once and left alone more often than not, these wait in a popover:
+        # side by side with the nine shapes they would not fit the window.
+        self._arrow_ends_row = self._style_row(_("Arrowheads"), self._arrow_ends)
+        styles = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        for margin in ("top", "bottom", "start", "end"):
+            setattr(styles.props, f"margin_{margin}", 10)
+        styles.append(self._style_row(_("Outline"), line_styles))
+        styles.append(self._arrow_ends_row)
+        styles.append(self._style_row(_("Edges"), edges))
+        self._shape_style_button = Gtk.MenuButton(
+            label=_("Style"), popover=Gtk.Popover(child=styles), valign=Gtk.Align.CENTER
+        )
+        self._shape_style_button.set_tooltip_text(
+            _("Dashed or dotted outlines, arrowheads, and smooth or crisp edges")
+        )
         self._add_page(
             "shape",
-            _row(
-                self._outline_toggle,
-                self._fill_toggle,
-                _bar_separator(),
-                line_styles,
-                self._arrow_ends_separator,
-                self._arrow_ends,
-                _bar_separator(),
-                edges,
-            ),
+            _row(self._outline_toggle, self._fill_toggle, _bar_separator(), self._shape_style_button),
         )
         self.colors.connect("changed", lambda *_args: self._sync_color_chips())
 
         self._erase_check = Gtk.CheckButton(label=_("Erase to nothing"))
         self._erase_check.set_tooltip_text(
-            _("Rub back to nothing instead of the secondary colour")
+            _("Rub back to nothing instead of the secondary color")
         )
         self._erase_check.connect(
             "toggled", lambda check: setattr(self.canvas, "erase_to_transparency", check.get_active())
@@ -201,7 +211,7 @@ class ToolOptionsMixin:
             if tool.id in SELECTION_SHAPE_IDS:
                 button = Gtk.ToggleButton(icon_name=tool.icon_name)
                 button.add_css_class("tempera-option-toggle")
-                self._add_shortcut_tooltip(button, tool.label, f"win.tool::{tool.id}")
+                self._add_shortcut_tooltip(button, f"win.tool::{tool.id}")
                 button.set_action_name("win.tool")
                 button.set_action_target_value(GLib.Variant.new_string(tool.id))
                 selection_shapes.append(button)
@@ -213,7 +223,7 @@ class ToolOptionsMixin:
             lambda scale: setattr(self.canvas, "wand_tolerance", int(scale.get_value())),
         )
         self._wand_tolerance_scale.set_tooltip_text(
-            _("How far the selection spreads into colours near the one you clicked")
+            _("How far the selection spreads into colors near the one you clicked")
         )
         self._wand_tolerance_scale.update_property([Gtk.AccessibleProperty.LABEL], [_("Tolerance")])
         self._add_page(
@@ -244,31 +254,30 @@ class ToolOptionsMixin:
         # How the text looks: each button also answers to its key.
         styles = Gtk.Box(valign=Gtk.Align.CENTER)
         styles.add_css_class("linked")
-        for markup, text, action in (
-            ("<b>B</b>", "Bold", "win.text-bold"),
-            ("<i>I</i>", "Italic", "win.text-italic"),
-            ("<u>U</u>", "Underline", "win.text-underline"),
-            ("<s>S</s>", "Strikethrough", "win.text-strikethrough"),
+        for markup, action in (
+            ("<b>B</b>", "win.text-bold"),
+            ("<i>I</i>", "win.text-italic"),
+            ("<u>U</u>", "win.text-underline"),
+            ("<s>S</s>", "win.text-strikethrough"),
         ):
             button = Gtk.ToggleButton(child=Gtk.Label(label=markup, use_markup=True))
             button.add_css_class("tempera-option-toggle")
-            button.add_css_class("tempera-text-style")
-            self._add_shortcut_tooltip(button, text, action)
+            self._add_shortcut_tooltip(button, action)
             button.set_action_name(action)
             styles.append(button)
         alignment = Gtk.Box(valign=Gtk.Align.CENTER)
         alignment.add_css_class("linked")
-        for value, text in (("left", "Align Left"), ("center", "Center"), ("right", "Align Right")):
+        for value in ALIGNMENTS:
             button = Gtk.ToggleButton(icon_name=f"tempera-align-{value}-symbolic")
             button.add_css_class("tempera-option-toggle")
-            self._add_shortcut_tooltip(button, text, f"win.text-align::{value}")
+            self._add_shortcut_tooltip(button, f"win.text-align::{value}")
             button.set_action_name("win.text-align")
             button.set_action_target_value(GLib.Variant.new_string(value))
             alignment.append(button)
         # The box behind the text wears the colour it is filled with.
         self._background_chip = ColorChip(filled=True)
         background = self._option_toggle(
-            _("Background"), self._background_chip, _("Put the text on a box of the secondary colour")
+            _("Background"), self._background_chip, _("Put the text on a box of the secondary color")
         )
         background.set_action_name("win.text-background")
         # The picker takes colours off the canvas; this takes one off anywhere
@@ -278,7 +287,7 @@ class ToolOptionsMixin:
         from_screen_content.append(Gtk.Image(icon_name="tempera-color-picker-symbolic"))
         from_screen_content.append(Gtk.Label(label=_("Pick from Screen")))
         from_screen.set_child(from_screen_content)
-        from_screen.set_tooltip_text(_("Take the primary colour from anywhere on the screen"))
+        from_screen.set_tooltip_text(_("Take the primary color from anywhere on the screen"))
         from_screen.set_action_name("win.pick-from-screen")
         self._add_page("picker", from_screen)
 
@@ -320,10 +329,10 @@ class ToolOptionsMixin:
         """Linked buttons, one for each value of a stateful action; the one it holds is pressed."""
         row = Gtk.Box(valign=Gtk.Align.CENTER)
         row.add_css_class("linked")
-        for value, icon, text in choices:
+        for value, icon in choices:
             button = Gtk.ToggleButton(icon_name=icon)
             button.add_css_class("tempera-option-toggle")
-            self._add_shortcut_tooltip(button, text, f"{action}::{value}")
+            self._add_shortcut_tooltip(button, f"{action}::{value}")
             button.set_action_name(action)
             button.set_action_target_value(GLib.Variant.new_string(value))
             row.append(button)
@@ -369,13 +378,12 @@ class ToolOptionsMixin:
         )
         self._size_entry.add_css_class("numeric")
         self._size_entry.update_property([Gtk.AccessibleProperty.LABEL], [_("Size")])
-        self._size_entry.connect("activate", lambda *_args: self._take_typed_size())
+        self._size_entry.connect("activate", lambda *_args: self._take_typed_size(done=True))
         leaving = Gtk.EventControllerFocus()
         leaving.connect("leave", lambda *_args: self._take_typed_size())
         self._size_entry.add_controller(leaving)
 
         self._size_list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.SINGLE)
-        self._size_list.add_css_class("tempera-size-list")
         self._size_list.connect("row-activated", self._on_size_preset)
         scroller = Gtk.ScrolledWindow(
             hscrollbar_policy=Gtk.PolicyType.NEVER,
@@ -403,8 +411,13 @@ class ToolOptionsMixin:
         box.append(self._size_unit)
         return box
 
-    def _take_typed_size(self) -> None:
-        """Take the size typed in, kept within what the slider reaches; anything else puts back the size."""
+    def _take_typed_size(self, done: bool = False) -> None:
+        """Take the size typed in, kept within what the slider reaches; anything else puts back the size.
+
+        Enter says the typing is `done`, and hands the keys back to the canvas.
+        """
+        if done:
+            self.canvas.grab_focus()
         text = self._size_entry.get_text().strip().lower().removesuffix("pt").removesuffix("px").strip()
         try:
             size = int(float(text))
@@ -476,7 +489,7 @@ class ToolOptionsMixin:
         chip = ColorChip(filled=True)
         self._left_out_chips.append(chip)
         button = self._option_toggle(
-            _("Transparent"), chip, _("Leave the secondary colour out of what is moved or pasted")
+            _("Transparent"), chip, _("Leave the secondary color out of what is moved or pasted")
         )
         button.set_action_name("win.transparent-selection")
         return button
@@ -487,6 +500,15 @@ class ToolOptionsMixin:
         for chip in self._left_out_chips:
             chip.color = self.colors.secondary
         self._background_chip.color = self.colors.secondary
+
+    @staticmethod
+    def _style_row(caption: str, choices: Gtk.Widget) -> Gtk.Box:
+        """A named row of the shape styles' popover."""
+        row = Gtk.Box(spacing=12)
+        label = Gtk.Label(label=caption, xalign=0, hexpand=True)
+        row.append(label)
+        row.append(choices)
+        return row
 
     def _sync_shape_options(self) -> None:
         """Show what the shape in hand will draw: a line is all outline, whatever is set."""
@@ -500,8 +522,7 @@ class ToolOptionsMixin:
         self._syncing_shape_options = False
         # Only an arrow has heads.
         arrow = canvas.shapes.shape.id == "arrow"
-        self._arrow_ends.set_visible(arrow)
-        self._arrow_ends_separator.set_visible(arrow)
+        self._arrow_ends_row.set_visible(arrow)
 
     def _on_outline_toggled(self, button: Gtk.ToggleButton) -> None:
         if self._syncing_shape_options:
@@ -524,7 +545,7 @@ class ToolOptionsMixin:
 
     def _show_tolerance(self, tolerance: int) -> None:
         self._tolerance_scale.set_tooltip_text(
-            _("How far a fill spreads into colours near the one you clicked: {value}").format(
+            _("How far a fill spreads into colors near the one you clicked: {value}").format(
                 value=tolerance
             )
         )
@@ -535,28 +556,19 @@ class ToolOptionsMixin:
         self._tool_label.set_label(canvas.active_tool.label)
         self._shape_picker.set_visible(canvas.supports_fill)
         self._size_section.set_visible(canvas.active_tool.sized)
-        page = "none"
-        if canvas.supports_fill:
-            page = "shape"
+        page = canvas.active_tool.options_page
+        if page == "shape":
             self._sync_shape_options()
-        elif canvas.supports_erase_mode:
-            page = "eraser"
-        elif canvas.supports_tolerance:
-            page = "fill"
-        elif canvas.supports_density:
-            page = "airbrush"
-        elif canvas.supports_font:
-            page = "text"
-        elif canvas.active_tool.id in SELECTION_SHAPE_IDS:
-            page = "select"
-        elif canvas.active_tool.id == WAND_TOOL_ID:
-            page = "wand"
-        elif canvas.active_tool.id == PICKER_TOOL_ID:
-            page = "picker"
         self._tool_options.set_visible_child_name(page)
+        # Ctrl+B with a brush in hand would otherwise restyle, unseen, the next text typed.
+        for name in (*(f"text-{switch}" for switch in TEXT_SWITCHES), "text-align"):
+            action = self.lookup_action(name)
+            # Laid out before the actions exist, the first time round.
+            if action is not None:
+                action.set_enabled(canvas.supports_font)
 
     def _choose_font(self, *_args) -> None:
-        dialog = Gtk.FontDialog(title=_("Text font"))
+        dialog = Gtk.FontDialog(title=_("Text Font"))
 
         def on_done(source, result):
             try:

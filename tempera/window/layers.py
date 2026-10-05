@@ -48,6 +48,10 @@ class LayersMixin:
         rename.connect("activate", self._unless_dragging(lambda *_args: self._prompt_layer_name()))
         self.add_action(rename)
 
+        show = Gio.SimpleAction.new("show-layer", None)
+        show.connect("activate", self._unless_dragging(lambda *_args: self._show_layer()))
+        self.add_action(show)
+
         panel = Gio.SimpleAction.new_stateful("layers-panel", None, GLib.Variant.new_boolean(False))
         panel.connect("change-state", self._on_layers_panel_changed)
         self.add_action(panel)
@@ -94,6 +98,40 @@ class LayersMixin:
         }
         for name, value in enabled.items():
             self.lookup_action(name).set_enabled(value)
+        self._show_current_layer(document)
+
+    def _show_current_layer(self, document: Document) -> None:
+        """Name the layer being painted on in the status bar, once there is more than one."""
+        layer = document.layer
+        self._layer_label.set_visible(len(document.layers) > 1)
+        self._layer_label.set_label(
+            layer.name if layer.shows else _("{name} (hidden)").format(name=layer.name)
+        )
+        self._layer_label.set_tooltip_text(_("The layer being painted on"))
+
+    def _say_layer_hidden(self) -> None:
+        """Say why a press painted nothing, and offer to put that right."""
+        if self._hidden_toast is not None:
+            # One at a time, however many presses there were.
+            self._hidden_toast.dismiss()
+        toast = Adw.Toast(
+            title=_("“{name}” is hidden, so nothing was painted on it").format(
+                name=self.canvas.document.layer.name
+            ),
+            use_markup=False,
+            button_label=_("Show Layer"),
+            action_name="win.show-layer",
+        )
+        toast.connect("dismissed", lambda *_args: setattr(self, "_hidden_toast", None))
+        self._hidden_toast = toast
+        self.toasts.add_toast(toast)
+
+    def _show_layer(self) -> None:
+        document = self.canvas.document
+        index = document.current
+        document.set_layer_visible(index, True)
+        if document.layers[index].opacity <= 0:
+            document.set_layer_opacity(index, 1.0)
 
     def _watch_layers(self, document: Document) -> None:
         document.connect("layers-changed", self._sync_layer_actions)
@@ -107,21 +145,13 @@ class LayersMixin:
         index = document.current
         entry = Gtk.Entry(text=document.layer.name, activates_default=True)
         entry.update_property([Gtk.AccessibleProperty.LABEL], [_("Layer name")])
-        dialog = Adw.AlertDialog(heading=_("Rename Layer"))
-        dialog.set_extra_child(entry)
-        dialog.add_response("cancel", _("Cancel"))
-        dialog.add_response("rename", _("Rename"))
-        dialog.set_response_appearance("rename", Adw.ResponseAppearance.SUGGESTED)
-        dialog.set_default_response("rename")
-        dialog.set_close_response("cancel")
 
-        def on_response(_dialog, response: str) -> None:
+        def rename() -> None:
             name = entry.get_text().strip()
-            if response == "rename" and name and index < len(document.layers):
+            if name and index < len(document.layers):
                 document.rename_layer(index, name)
 
-        dialog.connect("response", on_response)
-        dialog.present(self)
+        self.ask(_("Rename Layer"), "", "rename", _("Rename"), rename, extra=entry)
         entry.grab_focus()
 
     # The panel

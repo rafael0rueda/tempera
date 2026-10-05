@@ -212,3 +212,24 @@ def test_a_name_no_file_can_carry_still_writes_a_file_that_opens():
     document.layers[0].name = "Ink\x0b\x00lines"
     _width, _height, layers = read_openraster(io.BytesIO(written(document)))
     assert layers[0].name == "Inklines"
+
+
+# Files from other programs, holding what Tempera has no place for
+
+
+def test_what_a_file_holds_that_tempera_cannot_is_named():
+    stack = (
+        b"<image w='4' h='4'><stack>"
+        b"<layer src='a.png' composite-op='svg:multiply'/>"
+        b"<stack opacity='0.5'><layer src='a.png' x='2' y='2'/></stack>"
+        b"</stack></image>"
+    )
+    lost = []
+    read_openraster(archive({"stack.xml": stack, "a.png": png(new_surface(4, 4, RED))}), lost)
+    assert sorted(lost) == ["blending", "groups", "overhang"]
+
+
+def test_a_file_tempera_wrote_loses_nothing():
+    lost = []
+    read_openraster(io.BytesIO(written(layered())), lost)
+    assert lost == []

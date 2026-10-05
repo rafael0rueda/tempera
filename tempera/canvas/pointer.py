@@ -12,7 +12,7 @@ from gi.repository import Gdk, GLib
 
 from ..background import run_in_background
 from ..interface_size import scaled
-from ..tools import WAND_TOOL_ID, ToolContext
+from ..tools import ToolContext
 from ..tools.base import rect_handles
 from .drags import CanvasResize, Drag, PasteGrab, PasteMove, ShapeAdjust, Stroke, TextDrag
 from .floating import TEXT_PADDING, rotate_grip
@@ -180,7 +180,7 @@ class PointerMixin:
             arrow_ends=self.arrow_ends,
             antialias=self.smooth_shapes,
             erase_to_transparency=self.erase_to_transparency,
-            tolerance=self.wand_tolerance if self.active_tool.id == WAND_TOOL_ID else self.fill_tolerance,
+            tolerance=getattr(self, self.active_tool.tolerance or "fill_tolerance"),
             density=self.airbrush_density,
             reach=scaled(POINT_REACH) / self.zoom,
             pick_color=lambda color, btn: self.emit("color-picked", color, btn),
@@ -199,6 +199,9 @@ class PointerMixin:
         if self._working or self.frozen:
             # The last fill is not done yet; this press would paint under it.
             return
+        # A press anywhere on the canvas brings the keys back to it, from a
+        # field that was being typed in or a button that was tabbed to.
+        self.grab_focus()
         start_x, start_y = self._to_image(start_x, start_y)
         self._drag_origin = (start_x, start_y)
         self._drag_offset = (0.0, 0.0)
@@ -261,6 +264,12 @@ class PointerMixin:
 
         if handle is not None:
             return CanvasResize(self, handle)
+
+        if self.active_tool.mutates and not self._document.layer.shows:
+            # Paint that cannot be seen going on is a surprise later, when the
+            # layer is shown again: say so instead, and paint nothing.
+            self.emit("layer-hidden")
+            return Drag(self)
 
         if not self.active_tool.in_progress:
             self._shape_button = gesture.get_current_button()

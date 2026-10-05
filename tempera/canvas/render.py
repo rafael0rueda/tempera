@@ -239,6 +239,9 @@ class RenderMixin:
         the canvas grow, and where a selection moved from it."""
         document = self._document
         image_width, image_height = document.width, document.height
+        if document.backdrop[3] == 0:
+            # A picture started see-through grows and empties to nothing: there is no white to show.
+            return
         paste = self._paste
         if paste is not None:
             if paste.source is not None and document.current == 0:
@@ -309,7 +312,8 @@ class RenderMixin:
                 cr.restore()
             elif selection.mask is not None:
                 # Picked out pixel by pixel: the ants follow the pixels' edges.
-                draw_edges_marquee(cr, selection.edges)
+                # Only those in view: a pick on a photo has far more than the screen shows.
+                draw_edges_marquee(cr, selection.edges_within(*cr.clip_extents()))
             else:
                 draw_marquee(cr, *selection.rect)
 

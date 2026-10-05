@@ -1,40 +1,20 @@
 # SPDX-FileCopyrightText: 2026 Rafael Rueda
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-import time
 
 import pytest
 from gi.repository import Adw, Gdk, Gio, GdkPixbuf, GLib, Gtk
 
-from tempera import recent_files, settings
+from tempera import recent_files, settings, shortcuts
 from tempera.color import rgba
 from tempera.document import new_surface
 from tempera.main import TemperaApplication
 from tempera.window import TemperaWindow, scaled_side
 
+from driving import wait_until
 from pixels import paint_pixel, pixel_at
 
 RED = (1.0, 0.0, 0.0, 1.0)
-
-
-@pytest.fixture(scope="module")
-def application():
-    app = Adw.Application(
-        application_id="io.github.rafael0rueda.Tempera.Tests",
-        flags=Gio.ApplicationFlags.NON_UNIQUE,
-    )
-    # Windows can only be added once the application has started up.
-    app.register(None)
-    return app
-
-
-@pytest.fixture
-def window(application, monkeypatch, tmp_path):
-    monkeypatch.setattr(recent_files, "_recent_file_path", lambda: tmp_path / "recent-files.txt")
-    monkeypatch.setattr(settings, "_settings_path", lambda: tmp_path / "settings.ini")
-    window = TemperaWindow(application)
-    yield window
-    window.destroy()
 
 
 def test_undo_waits_while_a_stroke_is_under_way(window):
@@ -144,16 +124,16 @@ def test_tooltips_follow_changed_shortcuts(application, window):
     from tempera import shortcuts
 
     swap = window._color_bar.swap_button
-    assert swap.get_tooltip_text() == "Swap colors (X)"
+    assert swap.get_tooltip_text() == "Swap Colors (X)"
 
     shortcuts.assign(application, "win.swap-colors", "<Shift>x")
-    assert swap.get_tooltip_text() == "Swap colors (Shift+X)"
+    assert swap.get_tooltip_text() == "Swap Colors (Shift+X)"
 
     shortcuts.assign(application, "win.swap-colors", None)
-    assert swap.get_tooltip_text() == "Swap colors"
+    assert swap.get_tooltip_text() == "Swap Colors"
 
     shortcuts.reset(application)
-    assert swap.get_tooltip_text() == "Swap colors (X)"
+    assert swap.get_tooltip_text() == "Swap Colors (X)"
 
 
 def test_bare_keys_pause_while_typing_including_new_ones(application, window):
@@ -194,16 +174,6 @@ def settle():
     context = GLib.MainContext.default()
     while context.pending():
         context.iteration(False)
-
-
-def settle_until(condition, timeout=5.0):
-    """Keep the main loop turning until something a worker thread started has finished."""
-    context = GLib.MainContext.default()
-    deadline = time.monotonic() + timeout
-    while not condition() and time.monotonic() < deadline:
-        context.iteration(False)
-        time.sleep(0.002)
-    return condition()
 
 
 def test_unchanged_window_closes_on_the_first_try(application, window):
@@ -275,7 +245,7 @@ def test_save_keeps_the_jpeg_quality_without_asking(window, tmp_path):
 
     window.activate_action("win.save", None)
 
-    assert settle_until(lambda: not window._busy)
+    assert wait_until(lambda: not window._busy)
     assert path.stat().st_size > 0
     assert window.get_visible_dialog() is None
 
@@ -288,7 +258,7 @@ def test_saving_shows_a_spinner_until_it_is_done(window, tmp_path):
     assert window._busy
     assert window._busy_spinner.get_visible()
 
-    assert settle_until(lambda: not window._busy)
+    assert wait_until(lambda: not window._busy)
     assert not window._busy_spinner.get_visible()
     assert path.exists()
 
@@ -303,7 +273,7 @@ def test_painting_while_a_save_runs_leaves_the_image_modified(window, tmp_path):
     paint_pixel(document.surface, 0, 0, RED)
     document.commit_change()
 
-    assert settle_until(lambda: not window._busy)
+    assert wait_until(lambda: not window._busy)
     assert document.modified
 
 
@@ -315,7 +285,7 @@ def test_a_second_save_is_ignored_while_one_is_running(window, tmp_path):
     window.activate_action("win.save", None)
     window.activate_action("win.save", None)
 
-    assert settle_until(lambda: not window._busy)
+    assert wait_until(lambda: not window._busy)
     assert not window._busy
 
 
@@ -325,10 +295,10 @@ def test_opening_an_image_reads_it_in_the_background(window, tmp_path):
     pixbuf.fill(0xFFFFFFFF)
     pixbuf.savev(str(path), "png", [], [])
 
-    window._open_file(Gio.File.new_for_path(str(path)), "no: {message}")
+    window._open_file(Gio.File.new_for_path(str(path)))
     assert window._busy
 
-    assert settle_until(lambda: not window._busy)
+    assert wait_until(lambda: not window._busy)
     assert (window.canvas.document.width, window.canvas.document.height) == (7, 3)
     assert str(path) in load_recent_uris()
 
@@ -337,13 +307,16 @@ def test_an_image_that_cannot_be_read_says_so_and_keeps_the_old_one(window, tmp_
     path = tmp_path / "broken.png"
     path.write_text("not a picture")
     before = window.canvas.document
-    forgotten = []
+    forgotten, failures = [], []
+    window.show_failure = lambda heading, message, **_more: failures.append(heading)
 
-    window._open_file(Gio.File.new_for_path(str(path)), "no: {message}", lambda: forgotten.append(True))
+    window._open_file(Gio.File.new_for_path(str(path)), lambda: forgotten.append(True))
 
-    assert settle_until(lambda: not window._busy)
+    assert wait_until(lambda: not window._busy)
     assert window.canvas.document is before
     assert forgotten
+    # In a dialog, which stays until it is read, and names the file.
+    assert failures == ["Could Not Open “broken.png”"]
 
 
 def test_save_asks_where_for_an_image_it_cannot_write_back(window, tmp_path, monkeypatch):
@@ -437,8 +410,8 @@ def test_an_image_larger_than_the_window_opens_zoomed_out(application, window, t
     pixbuf.fill(0xFFFFFFFF)
     pixbuf.savev(str(path), "png", [], [])
 
-    window._open_file(Gio.File.new_for_path(str(path)), "no: {message}")
-    assert settle_until(lambda: not window._busy)
+    window._open_file(Gio.File.new_for_path(str(path)))
+    assert wait_until(lambda: not window._busy)
     settle()
 
     assert window.canvas.zoom < 1.0
@@ -453,8 +426,8 @@ def test_a_small_image_opens_at_full_size(window, tmp_path):
     pixbuf.fill(0xFFFFFFFF)
     pixbuf.savev(str(path), "png", [], [])
 
-    window._open_file(Gio.File.new_for_path(str(path)), "no: {message}")
-    assert settle_until(lambda: not window._busy)
+    window._open_file(Gio.File.new_for_path(str(path)))
+    assert wait_until(lambda: not window._busy)
     settle()
 
     assert window.canvas.zoom == 1.0
@@ -767,3 +740,197 @@ def test_rotate_counterclockwise_has_a_key():
     from tempera import shortcuts
 
     assert shortcuts.keys_for("win.rotate-ccw") == ["<Control><Shift>r"]
+
+
+# Whose keys they are
+
+
+def test_a_dialog_over_the_picture_takes_every_key(window, application, monkeypatch):
+    assert application.get_accels_for_action("win.undo") == ["<Control>z"]
+    monkeypatch.setattr(window, "get_visible_dialog", lambda: object())
+    window._sync_typing_accels()
+    for action in ("win.undo", "win.select-all", "win.save", "win.tool::pencil", "win.zoom-in"):
+        assert application.get_accels_for_action(action) == []
+    assert application.get_accels_for_action("app.quit") == ["<Control>q"]
+    monkeypatch.undo()
+    window._sync_typing_accels()
+    assert application.get_accels_for_action("win.undo") == ["<Control>z"]
+
+
+def test_typing_text_onto_the_canvas_keeps_the_keys_with_ctrl(window, application):
+    window.canvas.begin_text(10, 10, window.colors.primary)
+    assert application.get_accels_for_action("win.tool::pencil") == []
+    assert application.get_accels_for_action("win.undo") == ["<Control>z"]
+    window.canvas.cancel_text()
+    assert application.get_accels_for_action("win.tool::pencil") == ["p"]
+
+
+def test_clicking_a_button_or_a_slider_leaves_the_keys_with_the_canvas(window):
+    # Enter then still lands the shape whose fill was just switched on.
+    for control in (window._fill_toggle, window._outline_toggle, window._size_scale):
+        assert not control.get_focus_on_click()
+    # A field is there to be typed in.
+    assert window._size_entry.get_focus_on_click()
+
+
+def test_a_press_on_the_canvas_brings_the_keys_back_to_it(window):
+    from driving import FakeGesture
+
+    grabbed = []
+    window.canvas.grab_focus = lambda: grabbed.append(True) or True
+    gesture = FakeGesture()
+    window.canvas._on_drag_begin(gesture, 5, 5)
+    window.canvas._on_drag_end(gesture, 0, 0)
+    assert grabbed
+
+
+def test_closing_the_window_and_turning_clockwise_have_keys():
+    assert shortcuts.keys_for("window.close") == ["<Control>w"]
+    assert shortcuts.keys_for("win.rotate-cw") == ["<Control><Alt>r"]
+    assert shortcuts.keys_for("win.pick-from-screen") == []
+    assert "win.pick-from-screen" in shortcuts.SHORTCUTS
+
+
+# Cut, Copy and Paste with something floating
+
+
+def test_cut_and_crop_are_offered_for_what_floats(window):
+    assert not window.lookup_action("cut").get_enabled()
+    window.canvas.begin_paste(new_surface(4, 4, RED), 2, 2)
+    assert window.lookup_action("cut").get_enabled()
+    assert window.lookup_action("crop").get_enabled()
+    window.canvas.cancel_floating()
+    assert not window.lookup_action("cut").get_enabled()
+
+
+def test_copy_leaves_what_floats_floating_and_cut_takes_it_away(window, monkeypatch):
+    copied = []
+    monkeypatch.setattr(window, "_put_on_clipboard", copied.append)
+    window.show_toast = lambda message: None
+    window.canvas.begin_paste(new_surface(4, 4, RED), 2, 2)
+    window.activate_action("win.copy", None)
+    assert window.canvas.has_floating_paste and len(copied) == 1
+    assert (copied[0].get_width(), copied[0].get_height()) == (4, 4)
+    window.activate_action("win.cut", None)
+    assert not window.canvas.has_floating_paste and len(copied) == 2
+    assert pixel_at(window.canvas.document.surface, 3, 3) == (255, 255, 255, 255)
+
+
+def test_text_on_the_clipboard_goes_into_the_text_box_being_typed_in(window, monkeypatch):
+    from tempera.window import edit
+
+    monkeypatch.setattr(edit, "has_text", lambda clipboard: True)
+    monkeypatch.setattr(edit, "has_image", lambda clipboard: False)
+    monkeypatch.setattr(edit, "read_text", lambda clipboard, on_text: on_text("pasted"))
+    window._sync_paste_action()
+    # Text is no use to the picture itself.
+    assert not window.lookup_action("paste").get_enabled()
+    window.lookup_action("tool").change_state(GLib.Variant.new_string("text"))
+    window.canvas.begin_text(10, 10, window.colors.primary)
+    assert window.lookup_action("paste").get_enabled()
+    window.activate_action("win.paste", None)
+    assert window.canvas._text.text == "pasted"
+    window.canvas.cancel_text()
+
+
+def test_select_all_does_not_land_text_being_typed(window, application):
+    window.canvas.begin_text(10, 10, window.colors.primary)
+    assert application.get_accels_for_action("win.select-all") == []
+    window.canvas.cancel_text()
+    assert application.get_accels_for_action("win.select-all") == ["<Control>a"]
+
+
+# What a session leaves for the next
+
+
+def test_erasing_to_nothing_and_the_last_new_image_are_remembered(window, application):
+    window._erase_check.set_active(True)
+    window._new_image = (320, 200, True)
+    window._save_preferences()
+    other = TemperaWindow(application)
+    try:
+        assert other.canvas.erase_to_transparency and other._erase_check.get_active()
+        assert other._new_image == (320, 200, True)
+    finally:
+        other.destroy()
+
+
+def test_everything_saved_is_also_put_back(window, application):
+    # One list drives both, so a key can no longer be saved and never restored.
+    keys = [option.key for option in window._options()]
+    assert len(keys) == len(set(keys))
+    window.lookup_action("tool").change_state(GLib.Variant.new_string("text"))
+    window.lookup_action("line-style").change_state(GLib.Variant.new_string("dotted"))
+    window.lookup_action("pixel-grid").change_state(GLib.Variant.new_boolean(True))
+    window._density_scale.set_value(61)
+    window.colors.primary = rgba("#26a269")
+    window._save_preferences()
+    other = TemperaWindow(application)
+    try:
+        assert {option.key: option.read() for option in other._options()} == {
+            option.key: option.read() for option in window._options()
+        }
+    finally:
+        other.destroy()
+
+
+def test_each_tool_names_its_page_of_options(window):
+    for tool, page in (("shapes", "shape"), ("eraser", "eraser"), ("fill", "fill"), ("wand", "wand"),
+                       ("select", "select"), ("lasso", "select"), ("text", "text"), ("pencil", "none")):
+        window.lookup_action("tool").change_state(GLib.Variant.new_string(tool))
+        assert window._tool_options.get_visible_child_name() == page
+
+
+def test_the_shape_styles_wait_in_a_popover(window):
+    window.lookup_action("tool").change_state(GLib.Variant.new_string("shapes"))
+    assert window._shape_style_button.get_popover() is not None
+    assert window._arrow_ends_row.get_ancestor(Gtk.Popover) is not None
+
+
+# Names a person reads, and a screen reader reads out
+
+
+def test_every_tooltip_is_the_name_the_shortcuts_list_gives_the_action(window):
+    assert len(window._shortcut_tooltips) > 40
+    for widget, text, action in window._shortcut_tooltips:
+        # One name for an action wherever it shows, marked for translation once.
+        assert text == shortcuts.SHORTCUTS[action].title
+        assert widget.get_tooltip_text().startswith(text)
+
+
+def test_user_visible_words_are_spelt_one_way():
+    import ast
+    from pathlib import Path
+
+    british = ("colour", "grey", "centre")
+    found = []
+    for path in (Path(__file__).resolve().parent.parent / "tempera").rglob("*.py"):
+        for node in ast.walk(ast.parse(path.read_text())):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id in ("_", "C_", "ngettext")
+            ):
+                for argument in node.args:
+                    if isinstance(argument, ast.Constant) and isinstance(argument.value, str):
+                        if any(word in argument.value.lower() for word in british):
+                            found.append((path.name, argument.value))
+    # The interface follows GNOME in "Color"; comments and the guide are free to differ.
+    assert found == []
+
+
+def test_the_size_dialogs_name_their_fields_and_headings_alike(window, monkeypatch):
+    shown = []
+    monkeypatch.setattr(Adw.AlertDialog, "present", lambda dialog, _parent: shown.append(dialog))
+    window._prompt_new_size()
+    window._prompt_canvas_size()
+    window._prompt_scale_image()
+    assert [dialog.get_heading() for dialog in shown] == ["New Image", "Canvas Size", "Resize Image"]
+
+
+def test_a_count_and_a_word_with_two_meanings_can_be_translated():
+    from tempera.i18n import C_, ngettext
+
+    assert ngettext("{count} page", "{count} pages", 1).format(count=1) == "1 page"
+    assert ngettext("{count} page", "{count} pages", 3).format(count=3) == "3 pages"
+    assert C_("tool", "Fill") == "Fill" and C_("shape", "Fill") == "Fill"

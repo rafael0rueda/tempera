@@ -17,6 +17,7 @@ from ..file_io import load_surface_async
 from ..i18n import _
 from ..interface_size import scaled
 from ..regions import of_color, without_color
+from ..selection import Selection
 from ..text import TextBox, TextStyle
 from ..tools.base import rect_handles
 
@@ -476,6 +477,10 @@ class FloatingMixin:
         if self._drag_origin is not None or self._working:
             self._waiting_paste = (surface, x, y, source, source_mask)
             return
+        if not self._document.layer.shows:
+            # It would land where it cannot be seen.
+            self.emit("layer-hidden")
+            return
         self._float(surface, x, y, source, source_mask)
 
     def _float_waiting_paste(self) -> None:
@@ -533,19 +538,53 @@ class FloatingMixin:
         self._paste.leave_out(self._left_out_color())
         self.queue_draw()
 
-    def commit_paste(self) -> bool:
-        """Stamp the floating image into the document, growing the canvas to fit."""
+    @property
+    def has_floating_paste(self) -> bool:
+        """Whether pixels float over the picture: for Cut, Copy and Crop they are the selection."""
+        return self._paste is not None
+
+    def floating_pixels(self) -> cairo.ImageSurface | None:
+        """A floating paste's pixels as they would land, for the clipboard."""
+        return None if self._paste is None else self._paste.landing()[0]
+
+    def discard_paste(self) -> bool:
+        """Throw a floating paste away for good, as Delete and Cut do.
+
+        Unlike Esc, which puts lifted pixels back, what was lifted from the
+        picture is gone from it: one step to undo.
+        """
         if self._paste is None:
             return False
         paste, self._paste = self._paste, None
+        if paste.source is not None:
+            self._document.erase(paste.source, mask=paste.vacated())
+        self._paste_changed()
+        return True
+
+    def commit_paste(self, keep_selected: bool = False) -> bool:
+        """Stamp the floating image into the document, growing the canvas to fit.
+
+        To `keep_selected`, what landed is selected where it lies, to be
+        picked up again.
+        """
+        if self._paste is None:
+            return False
+        paste, self._paste = self._paste, None
+        pixels, x, y = paste.landing()
         # Picked up and put straight back, it changes nothing and is no step to undo.
         if not paste.in_place:
-            pixels, x, y = paste.landing()
             cut_off = self._document.paste(
                 pixels, x, y, erase=paste.source, erase_mask=paste.vacated()
             )
             if cut_off:
                 self.emit("message", CUT_OFF_MESSAGE)
+        if keep_selected:
+            self.set_selection(
+                Selection.from_rect(
+                    x, y, pixels.get_width(), pixels.get_height(),
+                    self._document.width, self._document.height,
+                )
+            )
         self._sync_content_size()
         self.queue_draw()
         self.emit("floating-changed")
@@ -567,6 +606,10 @@ class FloatingMixin:
 
         `background` fills the box behind the text, when the style asks for one.
         """
+        if not self._document.layer.shows:
+            # It would be typed where it cannot be seen.
+            self.emit("layer-hidden")
+            return
         self.commit_floating()
         self._text = TextBox(x, y, color, self.font, self.text_style, background)
         self.grab_focus()
@@ -635,10 +678,15 @@ class FloatingMixin:
             self._blink_source = 0
 
     def _on_im_commit(self, im, text: str) -> None:
+        self.insert_text(text)
+
+    def insert_text(self, text: str) -> bool:
+        """Put text in at the caret of the box being typed in, as typing or pasting it does."""
         if self._text is None:
-            return
+            return False
         self._text.insert(text)
         self._refresh_text()
+        return True
 
     def _on_im_preedit_changed(self, im) -> None:
         """Show what an input method is still composing, such as Japanese before it is converted."""
@@ -670,7 +718,11 @@ class FloatingMixin:
             if keyval == Gdk.KEY_Escape:
                 return self.cancel_paste()
             if keyval in (Gdk.KEY_Return, Gdk.KEY_KP_Enter):
-                return self.commit_paste()
+                # Landed from the keyboard it stays selected, to carry on with;
+                # clicking away from it lets go of it.
+                return self.commit_paste(keep_selected=self.selecting)
+            if keyval in (Gdk.KEY_Delete, Gdk.KEY_KP_Delete, Gdk.KEY_BackSpace):
+                return self.discard_paste()
             delta = self._nudge_delta(keyval, state)
             if delta is not None:
                 self._nudge_paste(delta)

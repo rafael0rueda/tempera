@@ -8,7 +8,7 @@ from typing import Callable
 import cairo
 from gi.repository import Gdk, Gio, GLib, GObject
 
-from .document import surface_from_pixbuf
+from .pixbufs import pixbuf_from_texture, surface_from_pixbuf
 from .i18n import _
 from .file_io import check_image_size, load_surface
 
@@ -26,7 +26,7 @@ def surface_from_texture(texture: Gdk.Texture) -> cairo.ImageSurface:
     detour through GdkPixbuf.
     """
     check_image_size(texture.get_width(), texture.get_height())
-    return surface_from_pixbuf(Gdk.pixbuf_get_from_texture(texture))
+    return surface_from_pixbuf(pixbuf_from_texture(texture))
 
 
 def texture_from_surface(surface: cairo.ImageSurface) -> Gdk.Texture:
@@ -54,6 +54,25 @@ def has_image(clipboard: Gdk.Clipboard) -> bool:
         for gtype in formats.get_gtypes()
         for image_type in IMAGE_TYPES
     )
+
+
+def has_text(clipboard: Gdk.Clipboard) -> bool:
+    """Whether the clipboard holds text, which a text box being typed in can take."""
+    return clipboard.get_formats().union_deserialize_gtypes().contain_gtype(GObject.TYPE_STRING)
+
+
+def read_text(clipboard: Gdk.Clipboard, on_text: Callable[[str], None]) -> None:
+    """Fetch the clipboard's text; nothing happens if it turns out to have none."""
+
+    def on_read(source, result):
+        try:
+            text = source.read_text_finish(result)
+        except (GLib.Error, TypeError):
+            return
+        if text:
+            on_text(text)
+
+    clipboard.read_text_async(None, on_read)
 
 
 def read_image(

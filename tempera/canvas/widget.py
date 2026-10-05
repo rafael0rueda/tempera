@@ -17,13 +17,9 @@ from ..interface_size import scaled
 from ..selection import Selection
 from ..text import DEFAULT_FONT, TextBox, TextStyle
 from ..tools import (
-    AIRBRUSH_TOOL_ID,
     DEFAULT_DENSITY,
     DEFAULT_TOLERANCE,
     DEFAULT_WAND_TOLERANCE,
-    ERASER_TOOL_ID,
-    FILL_TOOL_ID,
-    SELECTION_TOOL_IDS,
     SHAPES_TOOL_ID,
     TEXT_TOOL_ID,
     Tool,
@@ -56,6 +52,8 @@ class Canvas(
         "pointer-left": (GObject.SignalFlags.RUN_FIRST, None, ()),
         # Something worth telling the user, such as a drop that could not be read.
         "message": (GObject.SignalFlags.RUN_FIRST, None, (str,)),
+        # A press that would have painted on a layer that does not show.
+        "layer-hidden": (GObject.SignalFlags.RUN_FIRST, None, ()),
     }
 
     def __init__(self, document: Document, colors: ColorState):
@@ -284,14 +282,6 @@ class Canvas(
         return self.active_tool.id == TEXT_TOOL_ID
 
     @property
-    def supports_erase_mode(self) -> bool:
-        return self.active_tool.id == ERASER_TOOL_ID
-
-    @property
-    def supports_density(self) -> bool:
-        return self.active_tool.id == AIRBRUSH_TOOL_ID
-
-    @property
     def brush_size(self) -> int:
         return self._brush_size
 
@@ -363,15 +353,6 @@ class Canvas(
     def pixel_grid_visible(self) -> bool:
         """Whether the grid is on and zoomed in far enough to be drawn."""
         return self._show_pixel_grid and self.zoom >= PIXEL_GRID_ZOOM
-
-    @property
-    def supports_tolerance(self) -> bool:
-        return self.active_tool.id == FILL_TOOL_ID
-
-    @property
-    def supports_selection_options(self) -> bool:
-        """Whether the tool in hand makes selections, which the selection options apply to."""
-        return self.active_tool.id in SELECTION_TOOL_IDS
 
     def set_font(self, font: str) -> None:
         self.font = font

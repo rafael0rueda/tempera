@@ -4,28 +4,14 @@
 """The recent colours are the ones painted with, counted when the paint lands."""
 
 import pytest
-from gi.repository import Gdk
 
 from tempera.canvas import Canvas
 from tempera.color import ColorState, rgba
 from tempera.document import Document, new_surface
 
+from driving import drag
+
 WHITE = (1.0, 1.0, 1.0, 1.0)
-
-
-class FakeGesture:
-    def get_current_button(self):
-        return Gdk.BUTTON_PRIMARY
-
-    def get_current_event_state(self):
-        return Gdk.ModifierType(0)
-
-
-def drag(canvas, start, end):
-    gesture = FakeGesture()
-    canvas._on_drag_begin(gesture, *start)
-    canvas._on_drag_update(gesture, end[0] - start[0], end[1] - start[1])
-    canvas._on_drag_end(gesture, end[0] - start[0], end[1] - start[1])
 
 
 def recent(canvas):

@@ -57,6 +57,7 @@ class ShortcutsDialog(Adw.PreferencesDialog):
             tooltip_text=_("Reset to default"),
             valign=Gtk.Align.CENTER,
         )
+        reset.update_property([Gtk.AccessibleProperty.LABEL], [_("Reset to default")])
         reset.add_css_class("flat")
         reset.connect("clicked", lambda *_args: self._reset(shortcut))
         row.add_suffix(reset)

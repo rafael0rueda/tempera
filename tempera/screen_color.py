@@ -63,7 +63,7 @@ def pick_on(
             return
         color = color_from_results(results) if response == SUCCESS else None
         if color is None:
-            on_error(_("The screen colour could not be read"))
+            on_error(_("The screen color could not be read"))
         else:
             on_color(color)
 
@@ -83,7 +83,7 @@ def pick_on(
         except GLib.Error as error:
             # No portal, or one without a colour picker: nothing will answer.
             bus.signal_unsubscribe(subscription)
-            on_error(_("Picking a colour from the screen is not available: {message}").format(
+            on_error(_("Picking a color from the screen is not available: {message}").format(
                 message=error.message
             ))
 

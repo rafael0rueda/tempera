@@ -36,7 +36,7 @@ Each [release](https://github.com/rafael0rueda/tempera/releases) has a Flatpak b
 attached. Download `Tempera-<version>-x86_64.flatpak` and install it for your user:
 
 ```
-flatpak install --user Tempera-2.0.1-x86_64.flatpak
+flatpak install --user Tempera-2.1.0-x86_64.flatpak
 ```
 
 It runs on the GNOME 50 runtime, which Flatpak offers to fetch from Flathub if you do
@@ -44,7 +44,7 @@ not have it yet. Installing a newer bundle the same way updates it.
 
 ## Requirements
 
-Fedora Workstation 40 or newer:
+Fedora Workstation 43 or newer (Tempera needs libadwaita 1.8):
 
 ```
 sudo dnf install python3-gobject python3-cairo gtk4 libadwaita

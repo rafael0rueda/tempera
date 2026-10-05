@@ -3,10 +3,8 @@
 
 """How shapes are drawn: dashed or dotted outlines, arrowheads, and crisp edges."""
 
-import pytest
-from gi.repository import Adw, Gdk, Gio, GLib
+from gi.repository import Gdk, GLib
 
-from tempera import recent_files, settings
 from tempera.canvas import Canvas
 from tempera.color import ColorState, rgba
 from tempera.document import Document, new_surface
@@ -169,25 +167,6 @@ def test_a_shape_waiting_to_land_takes_a_new_style():
     assert (ctx.line_style, ctx.arrow_ends, ctx.antialias) == ("dotted", "both", False)
 
 
-@pytest.fixture(scope="module")
-def application():
-    app = Adw.Application(
-        application_id="io.github.rafael0rueda.Tempera.ShapeStyleTests",
-        flags=Gio.ApplicationFlags.NON_UNIQUE,
-    )
-    app.register(None)
-    return app
-
-
-@pytest.fixture
-def window(application, monkeypatch, tmp_path):
-    monkeypatch.setattr(recent_files, "_recent_file_path", lambda: tmp_path / "recent-files.txt")
-    monkeypatch.setattr(settings, "_settings_path", lambda: tmp_path / "settings.ini")
-    window = TemperaWindow(application)
-    yield window
-    window.destroy()
-
-
 def choose(window, action, value):
     window.lookup_action(action).change_state(GLib.Variant.new_string(value))
 
@@ -204,9 +183,9 @@ def test_the_options_set_how_shapes_are_drawn(window):
 
 def test_arrowhead_choices_show_only_for_the_arrow(window):
     choose(window, "shape", "rectangle")
-    assert not window._arrow_ends.get_visible()
+    assert not window._arrow_ends_row.get_visible()
     choose(window, "shape", "arrow")
-    assert window._arrow_ends.get_visible()
+    assert window._arrow_ends_row.get_visible()
 
 
 def test_the_style_of_shapes_is_remembered(window, application):

@@ -3,40 +3,19 @@
 
 """Export As: a copy in another format, leaving the picture its own file."""
 
-import time
 
 import cairo
-import pytest
 from gi.repository import Adw, Gio, GLib
 
-from tempera import recent_files, settings, shortcuts
+from tempera import shortcuts
 from tempera.document import Document, new_surface
 from tempera.file_io import export_name, load_document, save_document
-from tempera.window import TemperaWindow
 
+from driving import wait_until
 from pixels import paint_pixel, pixel_at
 
 WHITE = (1.0, 1.0, 1.0, 1.0)
 RED = (1.0, 0.0, 0.0, 1.0)
-
-
-@pytest.fixture(scope="module")
-def application():
-    app = Adw.Application(
-        application_id="io.github.rafael0rueda.Tempera.ExportTests",
-        flags=Gio.ApplicationFlags.NON_UNIQUE,
-    )
-    app.register(None)
-    return app
-
-
-@pytest.fixture
-def window(application, monkeypatch, tmp_path):
-    monkeypatch.setattr(recent_files, "_recent_file_path", lambda: tmp_path / "recent-files.txt")
-    monkeypatch.setattr(settings, "_settings_path", lambda: tmp_path / "settings.ini")
-    window = TemperaWindow(application)
-    yield window
-    window.destroy()
 
 
 def layered_ora(tmp_path) -> Document:
@@ -49,11 +28,7 @@ def layered_ora(tmp_path) -> Document:
 
 
 def wait_until_idle(window):
-    context = GLib.MainContext.default()
-    deadline = time.monotonic() + 5
-    while window._busy and time.monotonic() < deadline:
-        context.iteration(False)
-    assert not window._busy
+    assert wait_until(lambda: not window._busy)
 
 
 def test_exporting_writes_the_picture_as_it_shows_and_keeps_its_own_file(window, tmp_path):
@@ -143,23 +118,23 @@ def test_export_has_a_key_and_a_place_in_the_menu(window):
 def test_a_damaged_file_leaves_the_window_able_to_save(window, tmp_path, monkeypatch):
     from tempera import file_io
 
-    def broken(_file):
+    def broken(_file, _lost=None):
         raise RuntimeError("damaged beyond telling")
 
     monkeypatch.setattr(file_io, "load_layers", broken)
-    toasts = []
-    window.show_toast = toasts.append
-    window._open_file(Gio.File.new_for_path(str(tmp_path / "bad.ora")), "Could not open: {message}")
+    failures = []
+    window.show_failure = lambda heading, message, **_more: failures.append(message)
+    window._open_file(Gio.File.new_for_path(str(tmp_path / "bad.ora")))
     assert window.canvas.frozen
     wait_until_idle(window)
-    assert toasts == ["Could not open: damaged beyond telling"]
+    assert failures == ["damaged beyond telling"]
     assert not window.canvas.frozen
 
 
 def test_the_picture_is_left_alone_while_another_is_read(window, tmp_path):
     layered_ora(tmp_path)
     old = window.canvas.document
-    window._open_file(Gio.File.new_for_path(str(tmp_path / "art.ora")), "{message}")
+    window._open_file(Gio.File.new_for_path(str(tmp_path / "art.ora")))
     assert window.canvas.is_dragging
     wait_until_idle(window)
     assert not window.canvas.is_dragging
@@ -178,3 +153,74 @@ def test_a_stroke_finished_while_saving_stays_unsaved(window, tmp_path):
     document.commit_change()
     wait_until_idle(window)
     assert document.modified
+
+
+# A file from another program is not written over without asking where
+
+
+def foreign_ora(tmp_path):
+    import io
+    import zipfile
+
+    stream = io.BytesIO()
+    surface = new_surface(4, 4, RED)
+    data = io.BytesIO()
+    surface.write_to_png(data)
+    with zipfile.ZipFile(stream, "w") as ora:
+        ora.writestr("mimetype", "image/openraster")
+        ora.writestr(
+            "stack.xml",
+            "<image w='4' h='4'><stack><layer src='a.png' composite-op='svg:multiply'/></stack></image>",
+        )
+        ora.writestr("a.png", data.getvalue())
+    path = tmp_path / "krita.ora"
+    path.write_bytes(stream.getvalue())
+    return path
+
+
+def test_a_file_holding_more_than_tempera_shows_is_saved_under_a_new_name(window, tmp_path, monkeypatch):
+    path = foreign_ora(tmp_path)
+    original = path.read_bytes()
+    toasts = []
+    window.show_toast = toasts.append
+    window._open_file(Gio.File.new_for_path(str(path)))
+    wait_until_idle(window)
+    document = window.canvas.document
+    assert document.lost == ("blending",)
+    assert toasts and "how its layers blend" in toasts[-1]
+
+    asked = []
+    monkeypatch.setattr(window, "_save_as", lambda then=None, keep_layers=False: asked.append(True))
+    window.activate_action("win.save", None)
+    assert asked == [True]
+    assert path.read_bytes() == original
+
+    # Once saved by Tempera, the file is its own, and Ctrl+S writes straight to it.
+    monkeypatch.undo()
+    window.show_toast = toasts.append
+    window._write_now(Gio.File.new_for_path(str(tmp_path / "mine.ora")), None, None)
+    wait_until_idle(window)
+    assert document.lost == ()
+
+
+def test_a_save_that_fails_says_so_in_a_dialog_offering_another_place(window, tmp_path):
+    failures = []
+    window.show_failure = lambda heading, message, save_as=False: failures.append((heading, save_as))
+    window._write_now(Gio.File.new_for_path(str(tmp_path / "no-such-folder" / "x.png")), None, None)
+    wait_until_idle(window)
+    assert failures == [("Could Not Save “x.png”", True)]
+    assert window.canvas.document.file is None
+
+
+def test_the_window_does_not_keep_a_replaced_picture_alive(window, tmp_path):
+    import gc
+    import weakref
+
+    document = window.canvas.document
+    window._export_now(Gio.File.new_for_path(str(tmp_path / "copy.png")), None)
+    wait_until_idle(window)
+    gone = weakref.ref(document)
+    window._set_document(Document(new_surface(4, 4, WHITE)))
+    del document
+    gc.collect()
+    assert gone() is None

@@ -66,6 +66,10 @@ def _crop_mask(mask: cairo.ImageSurface, x: int, y: int, width: int, height: int
     return cropped
 
 
+# How many rows of the image share a bucket of a selection's edges.
+EDGE_BAND = 128
+
+
 @dataclass
 class Selection:
     """Part of the image, picked out to be moved, copied or deleted.
@@ -201,6 +205,40 @@ class Selection:
                 running.setdefault(column, row)
             previous = current
         return edges
+
+    @cached_property
+    def _edge_bands(self) -> dict[int, list[tuple[int, int, int, int]]]:
+        """The edges by the band of rows they lie in, an upright one cut where it
+        crosses from one band to the next, so those in view are quick to find."""
+        bands: dict[int, list[tuple[int, int, int, int]]] = {}
+        for x1, y1, x2, y2 in self.edges:
+            if y1 == y2:
+                bands.setdefault(y1 // EDGE_BAND, []).append((x1, y1, x2, y2))
+                continue
+            top = y1
+            while top < y2:
+                bottom = min(y2, (top // EDGE_BAND + 1) * EDGE_BAND)
+                bands.setdefault(top // EDGE_BAND, []).append((x1, top, x2, bottom))
+                top = bottom
+        return bands
+
+    def edges_within(
+        self, left: float, top: float, right: float, bottom: float
+    ) -> list[tuple[int, int, int, int]]:
+        """The edges that reach into one rectangle of the image: all that needs drawing
+        when only that much is in view. A wand's pick on a photo can have a million."""
+        bands = self._edge_bands
+        found = []
+        for band in range(max(0, int(top) // EDGE_BAND), int(bottom) // EDGE_BAND + 1):
+            for edge in bands.get(band, ()):
+                if edge[2] >= left and edge[0] <= right and edge[3] >= top and edge[1] <= bottom:
+                    found.append(edge)
+        return found
+
+    def prepare(self) -> None:
+        """Work out the edges now, so the first frame that draws them need not: worth
+        doing off the UI thread for a selection picked out pixel by pixel."""
+        self._edge_bands
 
     def contains(self, x: float, y: float) -> bool:
         if not (self.x <= x <= self.x + self.width and self.y <= y <= self.y + self.height):

@@ -8,11 +8,12 @@ import os
 from typing import Callable
 
 import cairo
-from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Gtk
+from gi.repository import GdkPixbuf, Gio, GLib, Gtk
 
 from .background import run_in_background
-from .document import MAX_SIZE, Document, Layer, copy_surface, flatten, new_surface, surface_from_pixbuf
+from .document import MAX_SIZE, Document, Layer, flatten, new_surface
 from .i18n import _
+from .pixbufs import pixbuf_from_surface, surface_from_pixbuf
 from .openraster import OpenRasterError, read_openraster, write_openraster
 
 EXTENSION_FORMATS = {
@@ -51,21 +52,22 @@ LOAD_CHUNK = 64 * 1024
 MAX_FILE_BYTES = 512 * 1024 * 1024
 
 
-def image_filters() -> Gio.ListStore:
+def image_filters(layered_only: bool = False) -> Gio.ListStore:
+    """What a file dialog offers to show: every image, or with `layered_only`
+    the ones that keep layers first."""
     store = Gio.ListStore.new(Gtk.FileFilter)
 
     images = Gtk.FileFilter(name=_("Images"))
     for mime in OPEN_MIME_TYPES:
         images.add_mime_type(mime)
-    store.append(images)
 
     png = Gtk.FileFilter(name=_("PNG image"))
     png.add_mime_type("image/png")
-    store.append(png)
 
     ora = Gtk.FileFilter(name=_("OpenRaster image, with layers"))
     ora.add_mime_type("image/openraster")
-    store.append(ora)
+    for each in (ora,) if layered_only else (images, png, ora):
+        store.append(each)
 
     every = Gtk.FileFilter(name=_("All files"))
     every.add_pattern("*")
@@ -136,10 +138,10 @@ def is_openraster(file: Gio.File) -> bool:
     return start[:4] == b"PK\x03\x04" and start[30:54] == b"mimetypeimage/openraster"
 
 
-def _read_layers(file: Gio.File) -> list[Layer]:
+def _read_layers(file: Gio.File, lost: list[str] | None = None) -> list[Layer]:
     try:
         with open(file.get_path(), "rb") as stream:
-            _width, _height, layers = read_openraster(stream)
+            _width, _height, layers = read_openraster(stream, lost)
     except OpenRasterError as error:
         raise image_error(str(error)) from None
     except OSError as error:
@@ -149,12 +151,16 @@ def _read_layers(file: Gio.File) -> list[Layer]:
     return layers
 
 
-def load_layers(file: Gio.File) -> list[Layer]:
+def load_layers(file: Gio.File, lost: list[str] | None = None) -> list[Layer]:
     """The layers of an image file, bottom first: its own if it keeps them, or one
-    of the picture. Raises GLib.Error when it cannot be read."""
+    of the picture. Raises GLib.Error when it cannot be read.
+
+    `lost` is given the names of what the file holds that Tempera cannot, as
+    read_openraster() tells them.
+    """
     check_readable(file)
     if is_openraster(file):
-        return _read_layers(file)
+        return _read_layers(file, lost)
     return [Layer(_decode(file), _("Background"))]
 
 
@@ -220,8 +226,10 @@ def _decode(file: Gio.File) -> cairo.ImageSurface:
 
 
 def load_document(file: Gio.File) -> Document:
-    document = Document(layers=load_layers(file))
+    lost: list[str] = []
+    document = Document(layers=load_layers(file, lost))
     document.file = file
+    document.lost = tuple(lost)
     return document
 
 
@@ -294,10 +302,7 @@ def image_to_save(document: Document, file: Gio.File) -> tuple[object, str]:
         )
 
     if image_format == LAYERED_FORMAT:
-        layers = [
-            Layer(copy_surface(layer.surface), layer.name, layer.visible, layer.opacity)
-            for layer in document.layers
-        ]
+        layers = [layer.copy() for layer in document.layers]
         return (layers, document.width, document.height), image_format
     if image_format in FLATTEN_FORMATS:
         # These formats have no alpha channel, so composite onto white first.
@@ -305,8 +310,7 @@ def image_to_save(document: Document, file: Gio.File) -> tuple[object, str]:
         cr = cairo.Context(flattened)
         cr.set_source_surface(document.flattened(), 0, 0)
         cr.paint()
-        flattened.flush()
-        with_alpha = Gdk.pixbuf_get_from_surface(flattened, 0, 0, document.width, document.height)
+        with_alpha = pixbuf_from_surface(flattened)
         # These encoders reject an alpha channel outright, so drop it.
         pixbuf = GdkPixbuf.Pixbuf.new(
             GdkPixbuf.Colorspace.RGB, False, 8, document.width, document.height
@@ -374,9 +378,11 @@ def load_document_async(
         # on the UI thread.
         document = Document(layers=result)
         document.file = file
+        document.lost = tuple(lost)
         on_document(document)
 
-    run_in_background(lambda: load_layers(file), done)
+    lost: list[str] = []
+    run_in_background(lambda: load_layers(file, lost), done)
 
 
 def save_document_async(
