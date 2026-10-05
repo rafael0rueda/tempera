@@ -16,7 +16,7 @@ from ..document import MAX_SIZE, crop_surface
 from ..file_io import load_surface_async
 from ..i18n import _
 from ..interface_size import scaled
-from ..regions import without_color
+from ..regions import of_color, without_color
 from ..text import TextBox, TextStyle
 from ..tools.base import rect_handles
 
@@ -91,6 +91,8 @@ class FloatingPaste:
     angle: float = 0.0
     shear_x: float = 0.0
     shear_y: float = 0.0
+    # The colour a transparent selection is leaving out of it, if any.
+    left_out: Gdk.RGBA | None = None
 
     def __post_init__(self) -> None:
         if self.original is None:
@@ -98,7 +100,36 @@ class FloatingPaste:
 
     def leave_out(self, color: Gdk.RGBA | None) -> None:
         """Make the pixels of one colour see-through, or with None bring them all back."""
+        self.left_out = color
         self.surface = self.original if color is None else without_color(self.original, color)
+
+    @property
+    def in_place(self) -> bool:
+        """Whether it was lifted from the picture and sits, unchanged, just where it came from."""
+        return (
+            self.source is not None
+            and not self.transformed
+            and (self.scale_x, self.scale_y) == (1.0, 1.0)
+            and (round(self.x), round(self.y)) == tuple(self.source[:2])
+        )
+
+    def vacated(self) -> cairo.ImageSurface | None:
+        """Which pixels of where it came from it took with it, as a mask; None for all of them.
+
+        The colour a transparent selection leaves out stays behind.
+        """
+        if self.left_out is None:
+            return self.source_mask
+        width, height = self.original.get_width(), self.original.get_height()
+        mask = cairo.ImageSurface(cairo.FORMAT_A8, width, height)
+        cr = cairo.Context(mask)
+        if self.source_mask is None:
+            cr.paint()
+        else:
+            cr.mask_surface(self.source_mask, 0, 0)
+        cr.set_operator(cairo.OPERATOR_DEST_OUT)
+        cr.mask_surface(of_color(self.original, self.left_out), 0, 0)
+        return mask
 
     @property
     def width(self) -> int:
@@ -507,12 +538,14 @@ class FloatingMixin:
         if self._paste is None:
             return False
         paste, self._paste = self._paste, None
-        pixels, x, y = paste.landing()
-        cut_off = self._document.paste(
-            pixels, x, y, erase=paste.source, erase_mask=paste.source_mask
-        )
-        if cut_off:
-            self.emit("message", CUT_OFF_MESSAGE)
+        # Picked up and put straight back, it changes nothing and is no step to undo.
+        if not paste.in_place:
+            pixels, x, y = paste.landing()
+            cut_off = self._document.paste(
+                pixels, x, y, erase=paste.source, erase_mask=paste.vacated()
+            )
+            if cut_off:
+                self.emit("message", CUT_OFF_MESSAGE)
         self._sync_content_size()
         self.queue_draw()
         self.emit("floating-changed")

@@ -3,6 +3,7 @@
 
 """Transparent selection: the secondary colour is left out of what is moved or pasted."""
 
+import cairo
 import pytest
 from gi.repository import Adw, Gdk, Gio, GLib
 
@@ -144,3 +145,58 @@ def test_its_toggles_wear_the_secondary_colour(window):
     window.colors.secondary = rgba("#3584e4")
     assert len(window._left_out_chips) == 2
     assert all(chip.color.equal(rgba("#3584e4")) for chip in window._left_out_chips)
+
+
+# A colour mixed in the editor, which is not a whole number of 255ths
+
+
+def test_a_mixed_colour_painted_with_a_brush_is_left_out(canvas):
+    mixed = Gdk.RGBA()
+    mixed.red, mixed.green, mixed.blue, mixed.alpha = 0.4391, 0.5527, 0.7723, 1.0
+    surface = new_surface(12, 12, WHITE)
+    cr = cairo.Context(surface)
+    cr.set_source_rgba(mixed.red, mixed.green, mixed.blue, 1.0)
+    cr.set_line_width(8)
+    cr.move_to(2, 6)
+    cr.line_to(10, 6)
+    cr.stroke()
+    assert pixel_at(without_color(surface, mixed), 6, 6)[3] == 0
+
+
+# Picked up and put down
+
+
+def lift_and_land(canvas, selection=(16, 16, 20, 20), grab=(26, 26)):
+    canvas.select_region(*selection)
+    gesture = FakeGesture()
+    canvas._on_drag_begin(gesture, *grab)
+    canvas._on_drag_end(gesture, 0, 0)
+    assert canvas._paste is not None
+    canvas.commit_paste()
+
+
+@pytest.mark.parametrize("transparent", [False, True])
+def test_a_selection_put_straight_back_changes_nothing(canvas, transparent):
+    document = canvas.document
+    canvas.colors.secondary = rgba("#ff0000")
+    canvas.transparent_selection = transparent
+    lift_and_land(canvas)
+    assert pixel_at(document.surface, 26, 26) == RED_PIXEL
+    assert pixel_at(document.surface, 18, 18) == WHITE_PIXEL
+    assert not document.can_undo and not document.modified
+
+
+def test_what_a_transparent_selection_leaves_out_stays_where_it_was(canvas):
+    document = canvas.document
+    # Red is left out, so it is the white around the dot that moves.
+    canvas.colors.secondary = rgba("#ff0000")
+    canvas.transparent_selection = True
+    paint_pixel(document.surface, 18, 18, (0.0, 0.0, 1.0, 1.0))
+    move(canvas, (16, 16, 20, 20), (26, 26), (0, 30))
+    # The dot was never carried away, so it is still there, not emptied to white.
+    assert pixel_at(document.surface, 26, 26) == RED_PIXEL
+    # What was carried is gone from where it was and has landed below.
+    assert pixel_at(document.surface, 18, 18) == WHITE_PIXEL
+    assert pixel_at(document.surface, 18, 48) == (0, 0, 255, 255)
+    document.undo()
+    assert pixel_at(document.surface, 18, 18) == (0, 0, 255, 255)
