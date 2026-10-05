@@ -25,24 +25,24 @@ class HeaderMixin:
         header = Adw.HeaderBar()
         header.set_title_widget(self._title)
 
-        for icon, action, tooltip in (
-            ("tempera-new-symbolic", "win.new", "New image"),
-            ("tempera-open-symbolic", "win.open", "Open image"),
-            ("tempera-save-symbolic", "win.save", "Save"),
+        for icon, action in (
+            ("tempera-new-symbolic", "win.new"),
+            ("tempera-open-symbolic", "win.open"),
+            ("tempera-save-symbolic", "win.save"),
         ):
             button = Gtk.Button(icon_name=icon)
-            self._add_shortcut_tooltip(button, tooltip, action)
+            self._add_shortcut_tooltip(button, action)
             button.set_action_name(action)
             header.pack_start(button)
 
         history = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
         history.add_css_class("linked")
-        for icon, action, tooltip in (
-            ("tempera-undo-symbolic", "win.undo", "Undo"),
-            ("tempera-redo-symbolic", "win.redo", "Redo"),
+        for icon, action in (
+            ("tempera-undo-symbolic", "win.undo"),
+            ("tempera-redo-symbolic", "win.redo"),
         ):
             button = Gtk.Button(icon_name=icon)
-            self._add_shortcut_tooltip(button, tooltip, action)
+            self._add_shortcut_tooltip(button, action)
             button.set_action_name(action)
             history.append(button)
 
@@ -96,7 +96,7 @@ class HeaderMixin:
         self._busy_spinner = Adw.Spinner(visible=False, tooltip_text=_("Working…"))
 
         layers = Gtk.ToggleButton(icon_name="tempera-layers-symbolic", action_name="win.layers-panel")
-        self._add_shortcut_tooltip(layers, "Show Layers", "win.layers-panel")
+        self._add_shortcut_tooltip(layers, "win.layers-panel")
 
         header.pack_end(menu_button)
         header.pack_end(layers)
@@ -108,14 +108,14 @@ class HeaderMixin:
         """Rotate and flip, as a row of buttons in the menu. A click closes the menu."""
         row = Gtk.Box(spacing=4, homogeneous=True, margin_top=4, margin_bottom=2)
         row.add_css_class("tempera-menu-row")
-        for icon, text, action in (
-            ("tempera-rotate-left-symbolic", "Rotate Counterclockwise", "win.rotate-ccw"),
-            ("tempera-rotate-right-symbolic", "Rotate Clockwise", "win.rotate-cw"),
-            ("tempera-flip-horizontal-symbolic", "Flip Horizontal", "win.flip-horizontal"),
-            ("tempera-flip-vertical-symbolic", "Flip Vertical", "win.flip-vertical"),
+        for icon, action in (
+            ("tempera-rotate-left-symbolic", "win.rotate-ccw"),
+            ("tempera-rotate-right-symbolic", "win.rotate-cw"),
+            ("tempera-flip-horizontal-symbolic", "win.flip-horizontal"),
+            ("tempera-flip-vertical-symbolic", "win.flip-vertical"),
         ):
             button = Gtk.Button(icon_name=icon, hexpand=True)
-            self._add_shortcut_tooltip(button, text, action)
+            self._add_shortcut_tooltip(button, action)
             button.set_action_name(action)
             button.connect("clicked", lambda *_args: self._main_menu.popdown())
             row.append(button)
@@ -129,21 +129,21 @@ class HeaderMixin:
         steps.add_css_class("linked")
         self._menu_zoom_label = Gtk.Label()
         self._menu_zoom_label.add_css_class("numeric")
-        for icon, text, action in (
-            ("tempera-zoom-out-symbolic", "Zoom out", "win.zoom-out"),
-            (None, "Reset zoom", "win.zoom-reset"),
-            ("tempera-zoom-in-symbolic", "Zoom in", "win.zoom-in"),
+        for icon, action in (
+            ("tempera-zoom-out-symbolic", "win.zoom-out"),
+            (None, "win.zoom-reset"),
+            ("tempera-zoom-in-symbolic", "win.zoom-in"),
         ):
             if icon is None:
                 button = Gtk.Button(child=self._menu_zoom_label, hexpand=True)
             else:
                 button = Gtk.Button(icon_name=icon)
-            self._add_shortcut_tooltip(button, text, action)
+            self._add_shortcut_tooltip(button, action)
             button.set_action_name(action)
             steps.append(button)
         row.append(steps)
         fit = Gtk.Button(icon_name="tempera-zoom-fit-symbolic")
-        self._add_shortcut_tooltip(fit, "Zoom to fit", "win.zoom-fit")
+        self._add_shortcut_tooltip(fit, "win.zoom-fit")
         fit.set_action_name("win.zoom-fit")
         row.append(fit)
         return row

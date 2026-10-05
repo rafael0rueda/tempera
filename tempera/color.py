@@ -13,11 +13,11 @@ from .i18n import _
 # The GNOME palette, twenty colours with no two alike. Named, because a swatch
 # a screen reader can only call "#c01c28" is no use.
 PALETTE = [
-    (_("Black"), "#000000"), (_("Grey"), "#77767b"), (_("Red"), "#c01c28"),
+    (_("Black"), "#000000"), (_("Gray"), "#77767b"), (_("Red"), "#c01c28"),
     (_("Orange"), "#e66100"), (_("Yellow"), "#f5c211"), (_("Green"), "#2ec27e"),
     (_("Dark green"), "#26a269"), (_("Blue"), "#3584e4"), (_("Dark blue"), "#1c71d8"),
     (_("Purple"), "#9141ac"), (_("Brown"), "#986a44"), (_("Dark brown"), "#63452c"),
-    (_("White"), "#ffffff"), (_("Light grey"), "#deddda"), (_("Light red"), "#f66151"),
+    (_("White"), "#ffffff"), (_("Light gray"), "#deddda"), (_("Light red"), "#f66151"),
     (_("Light orange"), "#ffbe6f"), (_("Light yellow"), "#f8e45c"),
     (_("Light green"), "#8ff0a4"), (_("Light blue"), "#99c1f1"), (_("Pink"), "#dc8add"),
 ]
@@ -370,7 +370,7 @@ class ColorBar(Gtk.Box):
             swatch.color = recent[index]
             swatch.set_swatch_size(size)
             swatch.set_label_text(
-                _("Recent colour, {color}").format(color=describe(recent[index]))
+                _("Recent color, {color}").format(color=describe(recent[index]))
             )
             self._recent_grid.attach(swatch, index % columns, index // columns, 1, 1)
 

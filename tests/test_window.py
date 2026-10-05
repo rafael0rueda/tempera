@@ -124,16 +124,16 @@ def test_tooltips_follow_changed_shortcuts(application, window):
     from tempera import shortcuts
 
     swap = window._color_bar.swap_button
-    assert swap.get_tooltip_text() == "Swap colors (X)"
+    assert swap.get_tooltip_text() == "Swap Colors (X)"
 
     shortcuts.assign(application, "win.swap-colors", "<Shift>x")
-    assert swap.get_tooltip_text() == "Swap colors (Shift+X)"
+    assert swap.get_tooltip_text() == "Swap Colors (Shift+X)"
 
     shortcuts.assign(application, "win.swap-colors", None)
-    assert swap.get_tooltip_text() == "Swap colors"
+    assert swap.get_tooltip_text() == "Swap Colors"
 
     shortcuts.reset(application)
-    assert swap.get_tooltip_text() == "Swap colors (X)"
+    assert swap.get_tooltip_text() == "Swap Colors (X)"
 
 
 def test_bare_keys_pause_while_typing_including_new_ones(application, window):
@@ -885,3 +885,52 @@ def test_the_shape_styles_wait_in_a_popover(window):
     window.lookup_action("tool").change_state(GLib.Variant.new_string("shapes"))
     assert window._shape_style_button.get_popover() is not None
     assert window._arrow_ends_row.get_ancestor(Gtk.Popover) is not None
+
+
+# Names a person reads, and a screen reader reads out
+
+
+def test_every_tooltip_is_the_name_the_shortcuts_list_gives_the_action(window):
+    assert len(window._shortcut_tooltips) > 40
+    for widget, text, action in window._shortcut_tooltips:
+        # One name for an action wherever it shows, marked for translation once.
+        assert text == shortcuts.SHORTCUTS[action].title
+        assert widget.get_tooltip_text().startswith(text)
+
+
+def test_user_visible_words_are_spelt_one_way():
+    import ast
+    from pathlib import Path
+
+    british = ("colour", "grey", "centre")
+    found = []
+    for path in (Path(__file__).resolve().parent.parent / "tempera").rglob("*.py"):
+        for node in ast.walk(ast.parse(path.read_text())):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id in ("_", "C_", "ngettext")
+            ):
+                for argument in node.args:
+                    if isinstance(argument, ast.Constant) and isinstance(argument.value, str):
+                        if any(word in argument.value.lower() for word in british):
+                            found.append((path.name, argument.value))
+    # The interface follows GNOME in "Color"; comments and the guide are free to differ.
+    assert found == []
+
+
+def test_the_size_dialogs_name_their_fields_and_headings_alike(window, monkeypatch):
+    shown = []
+    monkeypatch.setattr(Adw.AlertDialog, "present", lambda dialog, _parent: shown.append(dialog))
+    window._prompt_new_size()
+    window._prompt_canvas_size()
+    window._prompt_scale_image()
+    assert [dialog.get_heading() for dialog in shown] == ["New Image", "Canvas Size", "Resize Image"]
+
+
+def test_a_count_and_a_word_with_two_meanings_can_be_translated():
+    from tempera.i18n import C_, ngettext
+
+    assert ngettext("{count} page", "{count} pages", 1).format(count=1) == "1 page"
+    assert ngettext("{count} page", "{count} pages", 3).format(count=3) == "3 pages"
+    assert C_("tool", "Fill") == "Fill" and C_("shape", "Fill") == "Fill"

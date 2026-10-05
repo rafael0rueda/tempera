@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from gi.repository import Gdk, Gtk
 
 from . import settings
-from .i18n import _
+from .i18n import C_, _
 from .tools import SHAPE_CLASSES, TOOL_CLASSES
 
 
@@ -104,7 +104,7 @@ SHORTCUT_GROUPS: list[tuple[str, list[Shortcut]]] = [
         ],
     ),
     (
-        _("Text"),
+        C_("shortcuts", "Text"),
         [
             Shortcut("win.text-bold", _("Bold"), ("<Control>b",)),
             Shortcut("win.text-italic", _("Italic"), ("<Control>i",)),
@@ -147,7 +147,7 @@ SHORTCUT_GROUPS: list[tuple[str, list[Shortcut]]] = [
         ],
     ),
     (
-        _("Shapes"),
+        C_("shortcuts", "Shapes"),
         [
             Shortcut(f"win.shape::{shape.id}", shape.label, (SHAPE_KEYS[shape.id],))
             for shape in SHAPE_CLASSES

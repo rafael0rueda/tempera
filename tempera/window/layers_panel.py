@@ -250,16 +250,16 @@ class LayersPanel(Gtk.Box):
 
         buttons = Gtk.Box(spacing=2, homogeneous=True)
         buttons.add_css_class("tempera-layer-buttons")
-        for icon, text, action in (
-            ("tempera-layer-add-symbolic", "New Layer", "win.add-layer"),
-            ("tempera-layer-duplicate-symbolic", "Duplicate Layer", "win.duplicate-layer"),
-            ("tempera-layer-up-symbolic", "Move Layer Up", "win.raise-layer"),
-            ("tempera-layer-down-symbolic", "Move Layer Down", "win.lower-layer"),
-            ("tempera-layer-delete-symbolic", "Delete Layer", "win.delete-layer"),
+        for icon, action in (
+            ("tempera-layer-add-symbolic", "win.add-layer"),
+            ("tempera-layer-duplicate-symbolic", "win.duplicate-layer"),
+            ("tempera-layer-up-symbolic", "win.raise-layer"),
+            ("tempera-layer-down-symbolic", "win.lower-layer"),
+            ("tempera-layer-delete-symbolic", "win.delete-layer"),
         ):
             button = Gtk.Button(icon_name=icon)
             button.add_css_class("flat")
-            add_tooltip(button, text, action)
+            add_tooltip(button, action)
             button.set_action_name(action)
             buttons.append(button)
         more = Gio.Menu()

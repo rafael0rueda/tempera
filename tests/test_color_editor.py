@@ -285,3 +285,14 @@ def test_the_picker_can_take_a_colour_off_the_screen(window, monkeypatch):
     assert window._tool_options.get_visible_child_name() == "picker"
     window.activate_action("win.pick-from-screen", None)
     assert to_hex(window.colors.primary) == "#e66100"
+
+
+def test_a_value_that_is_no_colour_says_so_in_words(colors):
+    editor = ColorEditor("Primary", rgba("#3584e4"), colors)
+    editor.hex.set_text("#12")
+    editor._take_hex()
+    assert editor.hex.has_css_class("error")
+    assert "#rrggbb" in editor.hex.get_tooltip_text()
+    editor.hex.set_text("#26a269")
+    editor._take_hex()
+    assert not editor.hex.has_css_class("error") and editor.hex.get_tooltip_text() is None

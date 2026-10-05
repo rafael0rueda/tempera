@@ -122,7 +122,7 @@ class TemperaWindow(
         # Widgets whose tooltip names a shortcut: (widget, text, action).
         self._shortcut_tooltips: list[tuple[Gtk.Widget, str, str]] = []
         self._color_bar = ColorBar(self.colors)
-        self._add_shortcut_tooltip(self._color_bar.swap_button, "Swap colors", "win.swap-colors")
+        self._add_shortcut_tooltip(self._color_bar.swap_button, "win.swap-colors")
         # Where the palette can go: position -> (slot it sits in, strip to show).
         self._palette_slots: dict[str, tuple[Gtk.Box, Gtk.Widget | None]] = {}
 
@@ -404,7 +404,13 @@ class TemperaWindow(
             self._keep_keys_on_the_canvas(child)
             child = child.get_next_sibling()
 
-    def _add_shortcut_tooltip(self, widget: Gtk.Widget, text: str, action: str) -> None:
+    def _add_shortcut_tooltip(self, widget: Gtk.Widget, action: str) -> None:
+        """Name a control after the action it stands for, with the key for it.
+
+        The name is the one the shortcuts list gives the action, so the two
+        never drift apart, and it is translated along with that list.
+        """
+        text = shortcuts.SHORTCUTS[action].title
         self._shortcut_tooltips.append((widget, text, action))
         widget.set_tooltip_text(shortcuts.tooltip(text, action))
         # A tooltip is only a description; a button showing an icon needs a name

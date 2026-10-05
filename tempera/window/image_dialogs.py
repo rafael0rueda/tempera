@@ -42,10 +42,11 @@ class ImageDialogsMixin:
         width_spin, height_spin = spins
 
         grid = Gtk.Grid(row_spacing=6, column_spacing=12, margin_top=12)
-        grid.attach(Gtk.Label(label=_("Width"), xalign=1), 0, 0, 1, 1)
-        grid.attach(width_spin, 1, 0, 1, 1)
-        grid.attach(Gtk.Label(label=_("Height"), xalign=1), 0, 1, 1, 1)
-        grid.attach(height_spin, 1, 1, 1, 1)
+        for row, (caption, spin) in enumerate(((_("Width"), width_spin), (_("Height"), height_spin))):
+            grid.attach(Gtk.Label(label=caption, xalign=1), 0, row, 1, 1)
+            grid.attach(spin, 1, row, 1, 1)
+            # Read out with the field, which on its own is only a number.
+            spin.update_property([Gtk.AccessibleProperty.LABEL], [caption])
         if extra is not None:
             grid.attach(extra, 0, 2, 2, 1)
 
@@ -79,7 +80,7 @@ class ImageDialogsMixin:
             self._set_document(document)
 
         self._prompt_size(
-            _("New image"),
+            _("New Image"),
             _("Choose a canvas size in pixels."),
             (last_width, last_height),
             "create",
@@ -93,7 +94,7 @@ class ImageDialogsMixin:
         document = self.canvas.document
 
         self._prompt_size(
-            _("Canvas size"),
+            _("Canvas Size"),
             _("The image keeps its top-left corner; extra space is left see-through.")
             if document.backdrop[3] == 0
             else _("The image keeps its top-left corner; extra space is filled with white."),
@@ -167,10 +168,11 @@ class ImageDialogsMixin:
         percent.connect("toggled", switch_units)
 
         grid = Gtk.Grid(row_spacing=6, column_spacing=12, margin_top=12)
-        grid.attach(Gtk.Label(label=_("Width"), xalign=1), 0, 0, 1, 1)
-        grid.attach(width_spin, 1, 0, 1, 1)
-        grid.attach(Gtk.Label(label=_("Height"), xalign=1), 0, 1, 1, 1)
-        grid.attach(height_spin, 1, 1, 1, 1)
+        for row, (caption, spin) in enumerate(((_("Width"), width_spin), (_("Height"), height_spin))):
+            grid.attach(Gtk.Label(label=caption, xalign=1), 0, row, 1, 1)
+            grid.attach(spin, 1, row, 1, 1)
+            # Read out with the field, which on its own is only a number.
+            spin.update_property([Gtk.AccessibleProperty.LABEL], [caption])
         grid.attach(keep_ratio, 0, 2, 2, 1)
 
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
@@ -178,7 +180,7 @@ class ImageDialogsMixin:
         content.append(grid)
 
         dialog = Adw.AlertDialog(
-            heading=_("Resize image"),
+            heading=_("Resize Image"),
             body=_("The whole picture is stretched or shrunk to the new size."),
         )
         dialog.set_extra_child(content)

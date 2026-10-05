@@ -159,7 +159,11 @@ class ColorPreview(Gtk.DrawingArea):
     """The colour as it was beside the colour as it is now, over a checkerboard."""
 
     def __init__(self):
-        super().__init__(content_width=72, content_height=36, accessible_role=Gtk.AccessibleRole.PRESENTATION)
+        super().__init__(
+            content_width=interface_size.scaled(72),
+            content_height=interface_size.scaled(36),
+            accessible_role=Gtk.AccessibleRole.PRESENTATION,
+        )
         self.before = Gdk.RGBA()
         self.after = Gdk.RGBA()
         self.add_css_class("tempera-color-preview")
@@ -253,13 +257,13 @@ class ColorEditor(Adw.Dialog):
             row_spacing=4,
             column_spacing=4,
         )
-        self.custom.update_property([Gtk.AccessibleProperty.LABEL], [_("Custom colours")])
-        custom_caption = Gtk.Label(label=_("Custom Colours"), xalign=0)
+        self.custom.update_property([Gtk.AccessibleProperty.LABEL], [_("Custom colors")])
+        custom_caption = Gtk.Label(label=_("Custom Colors"), xalign=0)
         custom_caption.add_css_class("heading")
         self.save_button = Gtk.Button(
-            icon_name="tempera-layer-add-symbolic", tooltip_text=_("Keep this colour for later")
+            icon_name="tempera-layer-add-symbolic", tooltip_text=_("Keep this color for later")
         )
-        self.save_button.update_property([Gtk.AccessibleProperty.LABEL], [_("Keep this colour for later")])
+        self.save_button.update_property([Gtk.AccessibleProperty.LABEL], [_("Keep this color for later")])
         self.save_button.add_css_class("flat")
         self.save_button.connect("clicked", lambda *_args: self.keep_color())
         custom_heading = Gtk.Box(spacing=6)
@@ -326,15 +330,26 @@ class ColorEditor(Adw.Dialog):
         color = self.color
         if skip != "hex":
             self.hex.set_text(to_hex(color))
-            self.hex.remove_css_class("error")
+        self._mark_hex(valid=True)
         self.preview.after = color
         self.preview.queue_draw()
+
+    def _mark_hex(self, valid: bool) -> None:
+        """Show whether what is typed is a colour: in words too, not by the red outline alone."""
+        if valid:
+            self.hex.remove_css_class("error")
+            self.hex.set_tooltip_text(None)
+        else:
+            self.hex.add_css_class("error")
+            self.hex.set_tooltip_text(_("Not a color: type one as #rrggbb, such as #3584e4"))
+        self.hex.update_state([Gtk.AccessibleState.INVALID], [0 if valid else 1])
 
     def _take_hex(self) -> None:
         color = parse_hex(self.hex.get_text())
         if color is None:
-            self.hex.add_css_class("error")
+            self._mark_hex(valid=False)
             return
+        self._mark_hex(valid=True)
         if to_hex(color) == to_hex(self.color):
             return
         self.set_color(color)
@@ -372,7 +387,7 @@ class ColorEditor(Adw.Dialog):
         self.custom.remove_all()
         size = interface_size.scaled(26)
         for index, color in enumerate(self.colors.custom):
-            swatch = Swatch(color, size=size, label=_("Custom colour, {color}").format(color=describe(color)))
+            swatch = Swatch(color, size=size, label=_("Custom color, {color}").format(color=describe(color)))
             swatch.set_tooltip_text(_("{color}. Right-click or press Delete to remove it").format(color=to_hex(color)))
             # Square, rather than stretched to the width of its place in the row.
             swatch.set_halign(Gtk.Align.CENTER)

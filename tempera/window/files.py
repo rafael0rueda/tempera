@@ -9,7 +9,7 @@ import weakref
 
 from gi.repository import Adw, Gio, GLib, Gtk
 
-from .. import printing
+from .. import interface_size, printing
 from ..document import Document
 from ..i18n import _
 from ..file_io import (
@@ -39,7 +39,7 @@ class FilesMixin:
             return
 
         dialog = Adw.AlertDialog(
-            heading=_("Save changes?"),
+            heading=_("Save Changes?"),
             body=_("“{name}” has unsaved changes.").format(name=document.title),
         )
         dialog.add_response("cancel", _("Cancel"))
@@ -345,7 +345,8 @@ class FilesMixin:
         scale.set_value(self._last_jpeg_quality)
         scale.set_draw_value(True)
         scale.set_hexpand(True)
-        scale.set_size_request(220, -1)
+        scale.set_size_request(interface_size.scaled(220), -1)
+        scale.update_property([Gtk.AccessibleProperty.LABEL], [_("JPEG quality")])
 
         dialog = Adw.AlertDialog(
             heading=_("JPEG Quality"),
