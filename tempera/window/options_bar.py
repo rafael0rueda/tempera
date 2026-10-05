@@ -262,7 +262,6 @@ class ToolOptionsMixin:
         ):
             button = Gtk.ToggleButton(child=Gtk.Label(label=markup, use_markup=True))
             button.add_css_class("tempera-option-toggle")
-            button.add_css_class("tempera-text-style")
             self._add_shortcut_tooltip(button, action)
             button.set_action_name(action)
             styles.append(button)
@@ -385,7 +384,6 @@ class ToolOptionsMixin:
         self._size_entry.add_controller(leaving)
 
         self._size_list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.SINGLE)
-        self._size_list.add_css_class("tempera-size-list")
         self._size_list.connect("row-activated", self._on_size_preset)
         scroller = Gtk.ScrolledWindow(
             hscrollbar_policy=Gtk.PolicyType.NEVER,

@@ -5,14 +5,12 @@
 
 from __future__ import annotations
 
-from gi.repository import Adw, Gtk
+from gi.repository import Gtk
 
 from ..canvas import too_large_message
-from ..document import DEFAULT_HEIGHT, DEFAULT_WIDTH, MAX_SIZE, Document, new_surface
+from ..document import MAX_SIZE, TRANSPARENT, WHITE, Document, new_surface
 from ..i18n import _
 
-WHITE = (1.0, 1.0, 1.0, 1.0)
-TRANSPARENT = (0.0, 0.0, 0.0, 0.0)
 
 
 def scaled_side(original: int, percent: float) -> int:
@@ -50,20 +48,14 @@ class ImageDialogsMixin:
         if extra is not None:
             grid.attach(extra, 0, 2, 2, 1)
 
-        dialog = Adw.AlertDialog(heading=heading, body=body)
-        dialog.set_extra_child(grid)
-        dialog.add_response("cancel", _("Cancel"))
-        dialog.add_response(accept_id, accept_label)
-        dialog.set_response_appearance(accept_id, Adw.ResponseAppearance.SUGGESTED)
-        dialog.set_default_response(accept_id)
-        dialog.set_close_response("cancel")
-
-        def on_response(_dialog, response: str) -> None:
-            if response == accept_id:
-                on_accept(int(width_spin.get_value()), int(height_spin.get_value()))
-
-        dialog.connect("response", on_response)
-        dialog.present(self)
+        self.ask(
+            heading,
+            body,
+            accept_id,
+            accept_label,
+            lambda: on_accept(int(width_spin.get_value()), int(height_spin.get_value())),
+            extra=grid,
+        )
 
     def _prompt_new_size(self) -> None:
         last_width, last_height, last_transparent = self._new_image
@@ -179,24 +171,17 @@ class ImageDialogsMixin:
         content.append(units)
         content.append(grid)
 
-        dialog = Adw.AlertDialog(
-            heading=_("Resize Image"),
-            body=_("The whole picture is stretched or shrunk to the new size."),
-        )
-        dialog.set_extra_child(content)
-        dialog.add_response("cancel", _("Cancel"))
-        dialog.add_response("scale", _("Resize"))
-        dialog.set_response_appearance("scale", Adw.ResponseAppearance.SUGGESTED)
-        dialog.set_default_response("scale")
-        dialog.set_close_response("cancel")
-
-        def on_response(_dialog, response: str) -> None:
-            if response != "scale":
-                return
+        def resize() -> None:
             values = [spin.get_value() for spin in spins]
             if in_percent():
                 values = [scaled_side(side, value) for side, value in zip(original, values)]
             self._say_if_too_large(document, document.scale(int(values[0]), int(values[1])))
 
-        dialog.connect("response", on_response)
-        dialog.present(self)
+        self.ask(
+            _("Resize Image"),
+            _("The whole picture is stretched or shrunk to the new size."),
+            "scale",
+            _("Resize"),
+            resize,
+            extra=content,
+        )

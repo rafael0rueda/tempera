@@ -8,11 +8,12 @@ import os
 from typing import Callable
 
 import cairo
-from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Gtk
+from gi.repository import GdkPixbuf, Gio, GLib, Gtk
 
 from .background import run_in_background
-from .document import MAX_SIZE, Document, Layer, copy_surface, flatten, new_surface, surface_from_pixbuf
+from .document import MAX_SIZE, Document, Layer, flatten, new_surface
 from .i18n import _
+from .pixbufs import pixbuf_from_surface, surface_from_pixbuf
 from .openraster import OpenRasterError, read_openraster, write_openraster
 
 EXTENSION_FORMATS = {
@@ -301,10 +302,7 @@ def image_to_save(document: Document, file: Gio.File) -> tuple[object, str]:
         )
 
     if image_format == LAYERED_FORMAT:
-        layers = [
-            Layer(copy_surface(layer.surface), layer.name, layer.visible, layer.opacity)
-            for layer in document.layers
-        ]
+        layers = [layer.copy() for layer in document.layers]
         return (layers, document.width, document.height), image_format
     if image_format in FLATTEN_FORMATS:
         # These formats have no alpha channel, so composite onto white first.
@@ -312,8 +310,7 @@ def image_to_save(document: Document, file: Gio.File) -> tuple[object, str]:
         cr = cairo.Context(flattened)
         cr.set_source_surface(document.flattened(), 0, 0)
         cr.paint()
-        flattened.flush()
-        with_alpha = Gdk.pixbuf_get_from_surface(flattened, 0, 0, document.width, document.height)
+        with_alpha = pixbuf_from_surface(flattened)
         # These encoders reject an alpha channel outright, so drop it.
         pixbuf = GdkPixbuf.Pixbuf.new(
             GdkPixbuf.Colorspace.RGB, False, 8, document.width, document.height

@@ -15,6 +15,7 @@ python.install_sources(
     'interface_size.py',
     'main.py',
     'openraster.py',
+    'pixbufs.py',
     'preferences.py',
     'printing.py',
     'recent_files.py',

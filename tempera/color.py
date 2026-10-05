@@ -74,9 +74,6 @@ class ColorState(GObject.Object):
             self.recent = [color.copy()] + kept[: MAX_RECENT_COLORS - 1]
         self.emit("changed")
 
-    def for_button(self, button: int) -> Gdk.RGBA:
-        return self._secondary if button == Gdk.BUTTON_SECONDARY else self._primary
-
     def swap(self) -> None:
         self._primary, self._secondary = self._secondary, self._primary
         self.emit("changed")

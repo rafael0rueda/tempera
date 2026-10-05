@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from gi.repository import Gio
+from gi.repository import Gio, GLib
 
 from .settings import config_dir
 
@@ -17,18 +17,50 @@ MAX_RECENT = 8
 # GNOME's own switch for this, in Settings › Privacy › File History.
 PRIVACY_SCHEMA = "org.gnome.desktop.privacy"
 REMEMBER_KEY = "remember-recent-files"
+# Asked each time the list is read or added to; a desktop that does not answer
+# promptly is not waited on.
+PORTAL_TIMEOUT_MS = 500
 
 
 def _recent_file_path() -> Path:
     return config_dir() / "recent-files.txt"
 
 
+def _read_portal() -> bool | None:
+    """The switch as the desktop's settings portal tells it, or None if it does not say.
+
+    Inside a Flatpak this is the only way to hear it: the sandbox has
+    settings of its own, where the switch is always on.
+    """
+    try:
+        bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+        answer = bus.call_sync(
+            "org.freedesktop.portal.Desktop",
+            "/org/freedesktop/portal/desktop",
+            "org.freedesktop.portal.Settings",
+            "Read",
+            GLib.Variant("(ss)", (PRIVACY_SCHEMA, REMEMBER_KEY)),
+            None,
+            Gio.DBusCallFlags.NONE,
+            PORTAL_TIMEOUT_MS,
+            None,
+        )
+    except GLib.Error:
+        return None
+    value = answer.unpack()[0]
+    return value if isinstance(value, bool) else None
+
+
 def remembering_allowed() -> bool:
     """Whether the desktop wants file history kept at all.
 
-    Nothing is recorded or shown while GNOME's File History switch is off. The
-    schema is missing on other desktops, where the answer is simply yes.
+    Nothing is recorded or shown while GNOME's File History switch is off.
+    The portal is asked first, then the settings themselves; the schema is
+    missing on other desktops, where the answer is simply yes.
     """
+    asked = _read_portal()
+    if asked is not None:
+        return asked
     source = Gio.SettingsSchemaSource.get_default()
     schema = None if source is None else source.lookup(PRIVACY_SCHEMA, True)
     if schema is None or not schema.has_key(REMEMBER_KEY):

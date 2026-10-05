@@ -1,9 +1,12 @@
 # SPDX-FileCopyrightText: 2026 Rafael Rueda
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-from gi.repository import Gio
+from gi.repository import Gio, GLib
 
 from tempera import recent_files
+
+# The real one: every test is otherwise given a portal that says nothing.
+read_portal = recent_files._read_portal
 
 
 def gio_file(path) -> Gio.File:
@@ -142,3 +145,28 @@ def test_clear_recent_forgets_everything(monkeypatch, tmp_path):
 def test_clearing_an_empty_list_is_not_an_error(monkeypatch, tmp_path):
     use_tmp_recent_file(monkeypatch, tmp_path)
     assert recent_files.clear_recent() == []
+
+
+def test_the_settings_portal_is_believed_before_the_sandbox_own_settings(monkeypatch):
+    # Inside a Flatpak the settings are the sandbox's own, where the switch is always on.
+    monkeypatch.setattr(recent_files, "_read_portal", lambda: False)
+    assert not recent_files.remembering_allowed()
+    monkeypatch.setattr(recent_files, "_read_portal", lambda: True)
+    assert recent_files.remembering_allowed()
+
+
+def test_a_portal_that_does_not_answer_is_not_an_error(monkeypatch):
+    def no_bus(*_args):
+        raise GLib.Error.new_literal(Gio.io_error_quark(), "no session bus", Gio.IOErrorEnum.FAILED)
+
+    monkeypatch.setattr(Gio, "bus_get_sync", no_bus)
+    assert read_portal() is None
+
+
+def test_the_portal_answer_is_unwrapped(monkeypatch):
+    class Bus:
+        def call_sync(self, *_args):
+            return GLib.Variant("(v)", (GLib.Variant("v", GLib.Variant("b", False)),))
+
+    monkeypatch.setattr(Gio, "bus_get_sync", lambda *_args: Bus())
+    assert read_portal() is False

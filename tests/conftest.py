@@ -48,6 +48,9 @@ def private_settings(monkeypatch, tmp_path):
     monkeypatch.setattr(recent_files, "_recent_file_path", lambda: tmp_path / "recent-files.txt")
     monkeypatch.setattr(settings, "_cache", None)
     monkeypatch.setattr(shortcuts, "_suspended", False)
+    # Nor is the desktop asked whether file history is kept: the answer would
+    # be this computer's, and differ from one to the next.
+    monkeypatch.setattr(recent_files, "_read_portal", lambda: None)
     yield path
     if interface_size.current() != interface_size.DEFAULT_SIZE:
         interface_size.apply(interface_size.DEFAULT_SIZE)

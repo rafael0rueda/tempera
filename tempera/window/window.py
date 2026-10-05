@@ -422,6 +422,38 @@ class TemperaWindow(
         for widget, text, action in self._shortcut_tooltips:
             widget.set_tooltip_text(shortcuts.tooltip(text, action))
 
+    def ask(
+        self,
+        heading: str,
+        body: str,
+        answer: str,
+        label: str,
+        on_accept,
+        extra: Gtk.Widget | None = None,
+        destructive: bool = False,
+    ) -> Adw.AlertDialog:
+        """Ask a question with one way to go ahead and Cancel, which Esc also gives.
+
+        `answer` names the response that goes ahead and `label` is what its
+        button says; `on_accept` is called if it is the one chosen. Enter
+        chooses it too, unless it is `destructive`: then Enter cancels.
+        `extra` goes under the question, for something to fill in.
+        """
+        dialog = Adw.AlertDialog(heading=heading, body=body)
+        if extra is not None:
+            dialog.set_extra_child(extra)
+        dialog.add_response("cancel", _("Cancel"))
+        dialog.add_response(answer, label)
+        dialog.set_response_appearance(
+            answer,
+            Adw.ResponseAppearance.DESTRUCTIVE if destructive else Adw.ResponseAppearance.SUGGESTED,
+        )
+        dialog.set_default_response("cancel" if destructive else answer)
+        dialog.set_close_response("cancel")
+        dialog.connect("response", lambda _dialog, response: response == answer and on_accept())
+        dialog.present(self)
+        return dialog
+
     def show_failure(self, heading: str, message: str, save_as: bool = False) -> None:
         """Say that something the user asked for could not be done, and why.
 

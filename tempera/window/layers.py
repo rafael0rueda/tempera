@@ -145,21 +145,13 @@ class LayersMixin:
         index = document.current
         entry = Gtk.Entry(text=document.layer.name, activates_default=True)
         entry.update_property([Gtk.AccessibleProperty.LABEL], [_("Layer name")])
-        dialog = Adw.AlertDialog(heading=_("Rename Layer"))
-        dialog.set_extra_child(entry)
-        dialog.add_response("cancel", _("Cancel"))
-        dialog.add_response("rename", _("Rename"))
-        dialog.set_response_appearance("rename", Adw.ResponseAppearance.SUGGESTED)
-        dialog.set_default_response("rename")
-        dialog.set_close_response("cancel")
 
-        def on_response(_dialog, response: str) -> None:
+        def rename() -> None:
             name = entry.get_text().strip()
-            if response == "rename" and name and index < len(document.layers):
+            if name and index < len(document.layers):
                 document.rename_layer(index, name)
 
-        dialog.connect("response", on_response)
-        dialog.present(self)
+        self.ask(_("Rename Layer"), "", "rename", _("Rename"), rename, extra=entry)
         entry.grab_focus()
 
     # The panel

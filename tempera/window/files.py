@@ -283,22 +283,14 @@ class FilesMixin:
         save_document_async(document, file, on_exported, on_error, copy=True, **arguments)
 
     def _confirm_replace(self, file: Gio.File, proceed) -> None:
-        dialog = Adw.AlertDialog(
-            heading=_("Replace “{name}”?").format(name=file.get_basename()),
-            body=_("A file with this name already exists. Saving will overwrite it."),
+        self.ask(
+            _("Replace “{name}”?").format(name=file.get_basename()),
+            _("A file with this name already exists. Saving will overwrite it."),
+            "replace",
+            _("Replace"),
+            proceed,
+            destructive=True,
         )
-        dialog.add_response("cancel", _("Cancel"))
-        dialog.add_response("replace", _("Replace"))
-        dialog.set_response_appearance("replace", Adw.ResponseAppearance.DESTRUCTIVE)
-        dialog.set_default_response("cancel")
-        dialog.set_close_response("cancel")
-
-        def on_response(_dialog, response: str) -> None:
-            if response == "replace":
-                proceed()
-
-        dialog.connect("response", on_response)
-        dialog.present(self)
 
     def _write(self, file: Gio.File, then=None, quality: int | None = None) -> None:
         """Save to a file, first asking what has to be asked: whether to go without
@@ -348,24 +340,19 @@ class FilesMixin:
         scale.set_size_request(interface_size.scaled(220), -1)
         scale.update_property([Gtk.AccessibleProperty.LABEL], [_("JPEG quality")])
 
-        dialog = Adw.AlertDialog(
-            heading=_("JPEG Quality"),
-            body=_("Lower values make a smaller file but lose more detail."),
+
+        def accept() -> None:
+            self._last_jpeg_quality = int(scale.get_value())
+            on_accept(self._last_jpeg_quality)
+
+        self.ask(
+            _("JPEG Quality"),
+            _("Lower values make a smaller file but lose more detail."),
+            "save",
+            accept_label or _("Save"),
+            accept,
+            extra=scale,
         )
-        dialog.set_extra_child(scale)
-        dialog.add_response("cancel", _("Cancel"))
-        dialog.add_response("save", accept_label or _("Save"))
-        dialog.set_response_appearance("save", Adw.ResponseAppearance.SUGGESTED)
-        dialog.set_default_response("save")
-        dialog.set_close_response("cancel")
-
-        def on_response(_dialog, response: str) -> None:
-            if response == "save":
-                self._last_jpeg_quality = int(scale.get_value())
-                on_accept(self._last_jpeg_quality)
-
-        dialog.connect("response", on_response)
-        dialog.present(self)
 
     def _write_now(self, file: Gio.File, then, quality: int | None) -> None:
         self._set_busy(True)

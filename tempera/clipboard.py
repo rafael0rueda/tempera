@@ -8,7 +8,7 @@ from typing import Callable
 import cairo
 from gi.repository import Gdk, Gio, GLib, GObject
 
-from .document import surface_from_pixbuf
+from .pixbufs import pixbuf_from_texture, surface_from_pixbuf
 from .i18n import _
 from .file_io import check_image_size, load_surface
 
@@ -26,7 +26,7 @@ def surface_from_texture(texture: Gdk.Texture) -> cairo.ImageSurface:
     detour through GdkPixbuf.
     """
     check_image_size(texture.get_width(), texture.get_height())
-    return surface_from_pixbuf(Gdk.pixbuf_get_from_texture(texture))
+    return surface_from_pixbuf(pixbuf_from_texture(texture))
 
 
 def texture_from_surface(surface: cairo.ImageSurface) -> Gdk.Texture:

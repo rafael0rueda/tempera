@@ -8,9 +8,10 @@ import math
 from dataclasses import dataclass
 
 import cairo
-from gi.repository import Gdk, GdkPixbuf, GObject
+from gi.repository import GdkPixbuf, GObject
 
 from .i18n import _
+from .pixbufs import pixbuf_from_surface
 
 MAX_UNDO = 50
 # An undo step keeps only the pixels the edit changed, but a fill or a
@@ -55,16 +56,6 @@ def clean_name(name: str) -> str:
     return "".join(
         character for character in name if character >= " " and character not in "\x7f\ufffe\uffff"
     ).strip()
-
-
-def surface_from_pixbuf(pixbuf: GdkPixbuf.Pixbuf) -> cairo.ImageSurface:
-    """Copy a pixbuf into a surface Tempera can draw on."""
-    surface = new_surface(pixbuf.get_width(), pixbuf.get_height(), (0, 0, 0, 0))
-    cr = cairo.Context(surface)
-    Gdk.cairo_set_source_pixbuf(cr, pixbuf, 0, 0)
-    cr.set_operator(cairo.OPERATOR_SOURCE)
-    cr.paint()
-    return surface
 
 
 def crop_surface(
@@ -476,9 +467,7 @@ class Document(GObject.Object):
         return flatten(self.layers, x, y, width, height)
 
     def to_pixbuf(self) -> GdkPixbuf.Pixbuf:
-        flattened = self.flattened()
-        flattened.flush()
-        return Gdk.pixbuf_get_from_surface(flattened, 0, 0, self.width, self.height)
+        return pixbuf_from_surface(self.flattened())
 
     # History
 
@@ -636,13 +625,8 @@ class Document(GObject.Object):
         """A copy of the current layer just above it, which becomes the current one."""
         if len(self.layers) >= self.layer_limit:
             return False
-        original = self.layer
-        copy = Layer(
-            copy_surface(original.surface),
-            _("{name} copy").format(name=original.name),
-            original.visible,
-            original.opacity,
-        )
+        copy = self.layer.copy()
+        copy.name = _("{name} copy").format(name=copy.name)
 
         def change():
             self.layers.insert(self.current + 1, copy)
