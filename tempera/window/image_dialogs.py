@@ -36,6 +36,8 @@ class ImageDialogsMixin:
             spin.set_value(value)
             # Wide enough for the largest allowed size in any interface font.
             spin.set_width_chars(len(str(MAX_SIZE)) + 1)
+            # Enter in either field accepts the dialog.
+            spin.set_activates_default(True)
             spins.append(spin)
         width_spin, height_spin = spins
 
@@ -116,6 +118,7 @@ class ImageDialogsMixin:
         for spin, side in zip(spins, original):
             spin.set_value(side)
             spin.set_width_chars(len(str(MAX_SIZE)) + 1)
+            spin.set_activates_default(True)
         keep_ratio = Gtk.CheckButton(label=_("Keep aspect ratio"), active=True)
 
         syncing = False

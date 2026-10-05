@@ -126,7 +126,12 @@ def test_a_box_behind_text_lands_with_it(canvas):
 # In the window
 
 
+def with_the_text_tool(window):
+    window.lookup_action("tool").change_state(GLib.Variant.new_string("text"))
+
+
 def test_the_switches_set_the_style(window):
+    with_the_text_tool(window)
     window.activate_action("win.text-bold", None)
     window.activate_action("win.text-underline", None)
     window.lookup_action("text-align").change_state(GLib.Variant.new_string("center"))
@@ -142,7 +147,17 @@ def test_an_unknown_alignment_is_ignored(window):
     assert window.canvas.text_style.align == "left"
 
 
+def test_the_keys_for_text_wait_for_the_text_tool(window):
+    # Ctrl+B with a brush in hand would restyle, unseen, the next text typed.
+    window.activate_action("win.text-bold", None)
+    assert not window.canvas.text_style.bold
+    with_the_text_tool(window)
+    window.activate_action("win.text-bold", None)
+    assert window.canvas.text_style.bold
+
+
 def test_the_style_is_remembered(window, application):
+    with_the_text_tool(window)
     window.activate_action("win.text-italic", None)
     window.activate_action("win.text-background", None)
     window.lookup_action("text-align").change_state(GLib.Variant.new_string("right"))

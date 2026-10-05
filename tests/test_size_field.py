@@ -75,7 +75,19 @@ def test_typing_into_a_field_keeps_the_one_key_shortcuts_out_of_the_way(window, 
     assert application.get_accels_for_action("win.tool::pencil") == ["p"]
     window.set_focus(window._size_entry)
     assert application.get_accels_for_action("win.tool::pencil") == []
-    # Shortcuts with Ctrl still work.
-    assert application.get_accels_for_action("win.undo") == ["<Control>z"]
+    # Shortcuts with Ctrl still work, except the ones a field uses for itself:
+    # there Ctrl+Z takes back typing, not a stroke on the picture behind.
+    assert application.get_accels_for_action("win.save") == ["<Control>s"]
+    for action in ("undo", "redo", "select-all", "cut", "copy", "paste"):
+        assert application.get_accels_for_action("win." + action) == []
     window.set_focus(None)
     assert application.get_accels_for_action("win.tool::pencil") == ["p"]
+    assert application.get_accels_for_action("win.undo") == ["<Control>z"]
+
+
+def test_typing_a_size_and_pressing_enter_hands_the_keys_back_to_the_canvas(window):
+    use(window, "brush")
+    grabbed = []
+    window.canvas.grab_focus = lambda: grabbed.append(True)
+    type_size(window, "9")
+    assert grabbed and window.canvas.brush_size == 9

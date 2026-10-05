@@ -199,6 +199,9 @@ class PointerMixin:
         if self._working or self.frozen:
             # The last fill is not done yet; this press would paint under it.
             return
+        # A press anywhere on the canvas brings the keys back to it, from a
+        # field that was being typed in or a button that was tabbed to.
+        self.grab_focus()
         start_x, start_y = self._to_image(start_x, start_y)
         self._drag_origin = (start_x, start_y)
         self._drag_offset = (0.0, 0.0)

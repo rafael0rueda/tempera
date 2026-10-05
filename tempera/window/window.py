@@ -101,7 +101,7 @@ class TemperaWindow(
         # destroys it once nothing holds it, which may be never.
         self.connect("destroy", self._end_recovery)
         self._busy = False
-        self._typing = False
+        self._typing = shortcuts.CANVAS
         self._syncing_size = False
         self._last_jpeg_quality = 90
         # The picture already told that saving it as PNG or JPEG merges its layers.
@@ -136,6 +136,9 @@ class TemperaWindow(
         self.connect("close-request", self._on_close_request)
         # Typing into a field, as into the canvas, needs the one-key shortcuts out of the way.
         self.connect("notify::focus-widget", lambda *_args: self._sync_typing_accels())
+        # A dialog over the picture takes every key until it is answered.
+        self.connect("notify::visible-dialog", lambda *_args: self._sync_typing_accels())
+        self._keep_keys_on_the_canvas(self.get_content())
 
     def _install_actions(self) -> None:
         simple_actions = {
@@ -371,11 +374,25 @@ class TemperaWindow(
 
     def _sync_typing_accels(self) -> None:
         """Give the one-key shortcuts back and forth as a text box comes and goes."""
-        typing = shortcuts.is_typing_in(self)
+        typing = shortcuts.keys_claimed_in(self)
         if typing == self._typing:
             return
         self._typing = typing
         shortcuts.apply_accels(self.get_application())
+
+    def _keep_keys_on_the_canvas(self, widget: Gtk.Widget) -> None:
+        """Leave the keyboard with the canvas when a button or a slider is clicked.
+
+        Enter then still lands the shape whose fill was just switched on, and
+        the arrows still nudge it. Tab reaches every control as before, and a
+        field still takes the keys when clicked: it is there to be typed in.
+        """
+        if isinstance(widget, (Gtk.Button, Gtk.ToggleButton, Gtk.MenuButton, Gtk.CheckButton, Gtk.Scale)):
+            widget.set_focus_on_click(False)
+        child = widget.get_first_child()
+        while child is not None:
+            self._keep_keys_on_the_canvas(child)
+            child = child.get_next_sibling()
 
     def _add_shortcut_tooltip(self, widget: Gtk.Widget, text: str, action: str) -> None:
         self._shortcut_tooltips.append((widget, text, action))

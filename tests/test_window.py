@@ -5,7 +5,7 @@
 import pytest
 from gi.repository import Adw, Gdk, Gio, GdkPixbuf, GLib, Gtk
 
-from tempera import recent_files, settings
+from tempera import recent_files, settings, shortcuts
 from tempera.color import rgba
 from tempera.document import new_surface
 from tempera.main import TemperaApplication
@@ -737,3 +737,52 @@ def test_rotate_counterclockwise_has_a_key():
     from tempera import shortcuts
 
     assert shortcuts.keys_for("win.rotate-ccw") == ["<Control><Shift>r"]
+
+
+# Whose keys they are
+
+
+def test_a_dialog_over_the_picture_takes_every_key(window, application, monkeypatch):
+    assert application.get_accels_for_action("win.undo") == ["<Control>z"]
+    monkeypatch.setattr(window, "get_visible_dialog", lambda: object())
+    window._sync_typing_accels()
+    for action in ("win.undo", "win.select-all", "win.save", "win.tool::pencil", "win.zoom-in"):
+        assert application.get_accels_for_action(action) == []
+    assert application.get_accels_for_action("app.quit") == ["<Control>q"]
+    monkeypatch.undo()
+    window._sync_typing_accels()
+    assert application.get_accels_for_action("win.undo") == ["<Control>z"]
+
+
+def test_typing_text_onto_the_canvas_keeps_the_keys_with_ctrl(window, application):
+    window.canvas.begin_text(10, 10, window.colors.primary)
+    assert application.get_accels_for_action("win.tool::pencil") == []
+    assert application.get_accels_for_action("win.undo") == ["<Control>z"]
+    window.canvas.cancel_text()
+    assert application.get_accels_for_action("win.tool::pencil") == ["p"]
+
+
+def test_clicking_a_button_or_a_slider_leaves_the_keys_with_the_canvas(window):
+    # Enter then still lands the shape whose fill was just switched on.
+    for control in (window._fill_toggle, window._outline_toggle, window._size_scale):
+        assert not control.get_focus_on_click()
+    # A field is there to be typed in.
+    assert window._size_entry.get_focus_on_click()
+
+
+def test_a_press_on_the_canvas_brings_the_keys_back_to_it(window):
+    from driving import FakeGesture
+
+    grabbed = []
+    window.canvas.grab_focus = lambda: grabbed.append(True) or True
+    gesture = FakeGesture()
+    window.canvas._on_drag_begin(gesture, 5, 5)
+    window.canvas._on_drag_end(gesture, 0, 0)
+    assert grabbed
+
+
+def test_closing_the_window_and_turning_clockwise_have_keys():
+    assert shortcuts.keys_for("window.close") == ["<Control>w"]
+    assert shortcuts.keys_for("win.rotate-cw") == ["<Control><Alt>r"]
+    assert shortcuts.keys_for("win.pick-from-screen") == []
+    assert "win.pick-from-screen" in shortcuts.SHORTCUTS

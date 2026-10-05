@@ -9,7 +9,7 @@ from gi.repository import GLib, Gtk, Pango
 
 from ..color import ColorChip
 from ..i18n import _
-from ..text import FONT_SIZE_RANGE, font_size, font_without_size, with_font_size
+from ..text import FONT_SIZE_RANGE, TEXT_SWITCHES, font_size, font_without_size, with_font_size
 from ..tools import (
     DENSITY_RANGE,
     PICKER_TOOL_ID,
@@ -369,7 +369,7 @@ class ToolOptionsMixin:
         )
         self._size_entry.add_css_class("numeric")
         self._size_entry.update_property([Gtk.AccessibleProperty.LABEL], [_("Size")])
-        self._size_entry.connect("activate", lambda *_args: self._take_typed_size())
+        self._size_entry.connect("activate", lambda *_args: self._take_typed_size(done=True))
         leaving = Gtk.EventControllerFocus()
         leaving.connect("leave", lambda *_args: self._take_typed_size())
         self._size_entry.add_controller(leaving)
@@ -403,8 +403,13 @@ class ToolOptionsMixin:
         box.append(self._size_unit)
         return box
 
-    def _take_typed_size(self) -> None:
-        """Take the size typed in, kept within what the slider reaches; anything else puts back the size."""
+    def _take_typed_size(self, done: bool = False) -> None:
+        """Take the size typed in, kept within what the slider reaches; anything else puts back the size.
+
+        Enter says the typing is `done`, and hands the keys back to the canvas.
+        """
+        if done:
+            self.canvas.grab_focus()
         text = self._size_entry.get_text().strip().lower().removesuffix("pt").removesuffix("px").strip()
         try:
             size = int(float(text))
@@ -554,6 +559,12 @@ class ToolOptionsMixin:
         elif canvas.active_tool.id == PICKER_TOOL_ID:
             page = "picker"
         self._tool_options.set_visible_child_name(page)
+        # Ctrl+B with a brush in hand would otherwise restyle, unseen, the next text typed.
+        for name in (*(f"text-{switch}" for switch in TEXT_SWITCHES), "text-align"):
+            action = self.lookup_action(name)
+            # Laid out before the actions exist, the first time round.
+            if action is not None:
+                action.set_enabled(canvas.supports_font)
 
     def _choose_font(self, *_args) -> None:
         dialog = Gtk.FontDialog(title=_("Text font"))
