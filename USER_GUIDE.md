@@ -527,4 +527,4 @@ image itself and the file dialogs, which the desktop draws, keep their usual siz
 the window is too small for everything at a big size, the tool options, the sidebar and
 the palette scroll.
 
-![Tempera at 150% interface size, with the Shapes tool selected and its nine shapes, the size, the Outline and Fill buttons and the outline styles in the bar above the canvas, and a filled star with a dashed outline just drawn on a meadow, waiting in a dashed box with a grip on each corner and side](data/screenshots/interface-size.png)
+![Tempera at 150% interface size, with the Shapes tool selected and its nine shapes, the size, the Outline, Fill and Style buttons in the bar above the canvas, and a filled star with a dashed outline just drawn on a meadow, waiting in a dashed box with a grip on each corner and side](data/screenshots/interface-size.png)

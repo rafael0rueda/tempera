@@ -66,19 +66,19 @@
   <screenshots>
     <screenshot type="default">
       <caption>A meadow painted on five layers, with the layers panel open</caption>
-      <image type="source" width="1280" height="800">https://raw.githubusercontent.com/rafael0rueda/tempera/v2.0.1/data/screenshots/main-window.png</image>
+      <image type="source" width="1280" height="800">https://raw.githubusercontent.com/rafael0rueda/tempera/v2.1.0/data/screenshots/main-window.png</image>
     </screenshot>
     <screenshot>
       <caption>The dark style, turning the sun on a layer of its own by its grip</caption>
-      <image type="source" width="1280" height="800">https://raw.githubusercontent.com/rafael0rueda/tempera/v2.0.1/data/screenshots/dark-style.png</image>
+      <image type="source" width="1280" height="800">https://raw.githubusercontent.com/rafael0rueda/tempera/v2.1.0/data/screenshots/dark-style.png</image>
     </screenshot>
     <screenshot>
       <caption>A dashed star waiting with grips to resize it, at a bigger interface size</caption>
-      <image type="source" width="1280" height="800">https://raw.githubusercontent.com/rafael0rueda/tempera/v2.0.1/data/screenshots/interface-size.png</image>
+      <image type="source" width="1280" height="800">https://raw.githubusercontent.com/rafael0rueda/tempera/v2.1.0/data/screenshots/interface-size.png</image>
     </screenshot>
     <screenshot>
       <caption>The colour editor, with colours kept for later</caption>
-      <image type="source" width="1280" height="800">https://raw.githubusercontent.com/rafael0rueda/tempera/v2.0.1/data/screenshots/color-editor.png</image>
+      <image type="source" width="1280" height="800">https://raw.githubusercontent.com/rafael0rueda/tempera/v2.1.0/data/screenshots/color-editor.png</image>
     </screenshot>
   </screenshots>
   <categories>
@@ -86,6 +86,39 @@
     <category>RasterGraphics</category>
   </categories>
   <releases>
+    <release version="2.1.0" date="2026-10-05">
+      <description>
+        <p>Tempera 2.1 is clearer about layers and saving, treats what you have picked up as the selection, and keeps a longer history on big pictures.</p>
+        <p>Layers and saving:</p>
+        <ul>
+          <li>Saving a picture with layers as a PNG or a JPEG asks first, once for each picture, and offers an OpenRaster file that keeps them</li>
+          <li>An OpenRaster file from GIMP or Krita that holds what Tempera cannot (blend modes, groups, pixels beyond the canvas) says so when opened, and is saved under a new name instead of written over</li>
+          <li>The status bar names the layer being painted on, and painting, pasting or typing on a hidden layer is refused with a button to show it</li>
+          <li>A save, open or export that fails says why in a dialog that stays until it is read</li>
+        </ul>
+        <p>Selections:</p>
+        <ul>
+          <li>Pixels picked up or pasted are the selection while they float, as in Paint: Copy leaves them floating, Cut and Delete take them away, and Crop to Selection crops to them</li>
+          <li>Landed with Enter they stay selected; clicking away lets go of them</li>
+          <li>Text on the clipboard is pasted at the caret of the text box being typed in</li>
+        </ul>
+        <p>Keyboard:</p>
+        <ul>
+          <li>In a field, Ctrl+Z, Ctrl+A, Ctrl+C, Ctrl+X and Ctrl+V edit what is typed instead of the picture, and no shortcut reaches the picture behind an open dialog</li>
+          <li>Clicking a button or a slider leaves the keys with the canvas, so Enter still lands the shape whose fill was just switched on; Enter also accepts the size dialogs</li>
+          <li>Ctrl+W closes the window, Ctrl+Alt+R rotates clockwise, F1 opens the guide, and picking a colour from the screen can be given a key</li>
+        </ul>
+        <p>Also new:</p>
+        <ul>
+          <li>The Shapes options fit the window: the outline, arrowhead and edge styles wait under a Style button</li>
+          <li>Erase to Nothing and the size last asked for a new image are remembered, and a picture started transparent stays transparent where it grows</li>
+          <li>Undo keeps far less for a long stroke on a big picture, about a sixth as much on a 12-megapixel photo, so the history reaches further back</li>
+          <li>A magic wand's pick on a noisy photo no longer slows scrolling and zooming once zoomed in</li>
+          <li>Recent Files follows GNOME's File History switch inside the Flatpak too</li>
+          <li>Every button's name can be translated, the interface spells Color one way, and more controls are named for screen readers</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.0.1" date="2026-10-05">
       <description>
         <p>Fixes for ways Tempera 2 could lose work or get stuck, found by going over it closely.</p>
