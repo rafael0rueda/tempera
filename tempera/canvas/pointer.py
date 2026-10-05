@@ -11,11 +11,11 @@ from dataclasses import replace
 from gi.repository import Gdk, GLib
 
 from ..background import run_in_background
-from ..document import MAX_SIZE
 from ..interface_size import scaled
 from ..tools import WAND_TOOL_ID, ToolContext
 from ..tools.base import rect_handles
-from .floating import SIDE_GRIPS, TEXT_PADDING, rotate_grip
+from .drags import CanvasResize, Drag, PasteGrab, PasteMove, ShapeAdjust, Stroke, TextDrag
+from .floating import TEXT_PADDING, rotate_grip
 
 # The resize grips, at the default interface size; they grow with it.
 HANDLE_SIZE = 10
@@ -27,9 +27,6 @@ HANDLE_MARGIN = 8
 # How near, in screen pixels at the default interface size, a click must land
 # to hit a point already placed, such as a polygon's first corner.
 POINT_REACH = 6
-# How far the pointer has to travel before a click inside a text box counts
-# as dragging it somewhere else rather than placing the caret.
-MOVE_THRESHOLD = 4
 HANDLE_CURSORS = {
     "e": "ew-resize",
     "w": "ew-resize",
@@ -82,62 +79,6 @@ class PointerMixin:
             "s": (width / 2, height),
             "se": (width, height),
         }
-
-    def _paste_resized(self, x: float, y: float) -> tuple[float, float, float, float]:
-        """New (x, y, width, height) for the floating paste, dragging one handle."""
-        ox, oy, ow, oh = self._paste_resize_origin
-        handle = self._paste_resize_handle
-        left, right = ox, ox + ow
-        top, bottom = oy, oy + oh
-        if "w" in handle:
-            left = max(0.0, min(x, right - 1))
-        elif "e" in handle:
-            right = min(max(x, left + 1), left + MAX_SIZE)
-        if "n" in handle:
-            top = max(0.0, min(y, bottom - 1))
-        elif "s" in handle:
-            bottom = min(max(y, top + 1), top + MAX_SIZE)
-        return left, top, right - left, bottom - top
-
-    def _resize_paste(self, x: float, y: float) -> None:
-        left, top, width, height = self._paste_resized(x, y)
-        self._paste.x, self._paste.y = left, top
-        self._paste.scale_x = width / self._paste.surface.get_width()
-        self._paste.scale_y = height / self._paste.surface.get_height()
-        self._sync_content_size()
-        self.queue_draw()
-        self.emit("floating-changed")
-
-    def _grab_paste(self, handle: str, x: float, y: float, skew: bool) -> None:
-        """Take hold of one of a floating paste's grips: to turn it, skew it or stretch it."""
-        paste = self._paste
-        if handle == "rotate":
-            kind = "rotate"
-        elif skew and handle in SIDE_GRIPS:
-            kind = "skew"
-        elif paste.transformed:
-            kind = "resize"
-        else:
-            # Upright, it stretches along the image's own sides.
-            self._paste_resize_handle = handle
-            self._paste_resize_origin = (paste.x, paste.y, paste.width, paste.height)
-            self._set_cursor(handle)
-            return
-        # How it was, for each move of the pointer to be measured from.
-        self._paste_grab = (kind, handle, (x, y), replace(paste))
-        self._set_cursor("rotating" if kind == "rotate" else handle)
-
-    def _follow_paste_grab(self, x: float, y: float, shift: bool) -> None:
-        kind, handle, start, grabbed = self._paste_grab
-        if kind == "rotate":
-            self._paste.rotate_from(grabbed, start, (x, y), snap=shift)
-        elif kind == "skew":
-            self._paste.skew_from(grabbed, handle, start, (x, y))
-        else:
-            self._paste.resize_from(grabbed, handle, (x, y))
-        self._sync_content_size()
-        self.queue_draw()
-        self.emit("floating-changed")
 
     def _shape_reach(self) -> float:
         """How near a pending shape a press has to land to take hold of it."""
@@ -224,14 +165,6 @@ class PointerMixin:
         self._set_cursor(None)
         self.emit("pointer-left")
 
-    def _resized_to(self, x: float, y: float) -> tuple[int, int]:
-        width, height = self._document.width, self._document.height
-        if self._resize_handle in ("e", "se"):
-            width = round(x)
-        if self._resize_handle in ("s", "se"):
-            height = round(y)
-        return max(1, min(width, MAX_SIZE)), max(1, min(height, MAX_SIZE))
-
     # Pointer input
 
     def _make_context(self, button: int) -> ToolContext:
@@ -263,24 +196,26 @@ class PointerMixin:
         if gesture.get_current_button() == Gdk.BUTTON_MIDDLE:
             # The middle button pans the view; it does not paint.
             return
-        if self._working:
+        if self._working or self.frozen:
             # The last fill is not done yet; this press would paint under it.
             return
         start_x, start_y = self._to_image(start_x, start_y)
         self._drag_origin = (start_x, start_y)
+        self._drag_offset = (0.0, 0.0)
+        self._drag = self._begin_drag(gesture, start_x, start_y)
 
+    def _begin_drag(self, gesture, start_x: float, start_y: float) -> Drag:
+        """What this press takes hold of, which the rest of the drag then goes to."""
         if self._text is not None:
             if self._text.contains(start_x, start_y, TEXT_PADDING):
                 # A click moves the caret, which leaves any half-composed word behind.
                 self._im.reset()
                 self._text.set_preedit("", 0)
-                self._text_origin = (self._text.x, self._text.y)
-                self._text_moved = False
                 self.grab_focus()
-            else:
-                # Clicking away lands the text; the click itself does not draw.
-                self.commit_text()
-            return
+                return TextDrag(self, self._text)
+            # Clicking away lands the text; the click itself does not draw.
+            self.commit_text()
+            return Drag(self)
 
         handle = self._handle_at(start_x, start_y)
         # Ctrl leaves the original where it is, so the drag copies instead of moves.
@@ -289,15 +224,12 @@ class PointerMixin:
         if self._paste is not None:
             if handle is not None:
                 # Ctrl on a side grip skews what floats, rather than stretch it.
-                self._grab_paste(handle, start_x, start_y, skew=copy)
-                return
+                return PasteGrab(self, self._paste, handle, start_x, start_y, skew=copy)
             if self._paste.contains(start_x, start_y):
-                self._paste_origin = (self._paste.x, self._paste.y)
-                self._set_cursor("paste")
-            else:
-                # Clicking away lands the paste; the click itself does not draw.
-                self.commit_paste()
-            return
+                return PasteMove(self, self._paste)
+            # Clicking away lands the paste; the click itself does not draw.
+            self.commit_paste()
+            return Drag(self)
 
         if self.active_tool.adjustable:
             if handle is not None:
@@ -313,30 +245,22 @@ class PointerMixin:
                 self.finish_shape()
                 self._drag_origin = origin
             if self.active_tool.adjustable:
-                self._shape_adjusting = True
-                return
+                return ShapeAdjust(self, self.active_tool)
 
         # Grabbing a selection's own handle scales it in place, without a
         # separate gesture to first lift it the way moving it needs.
         if self.selecting and self._selection is not None and handle is not None:
             self._lift_selection(copy)
             # Ctrl already says to copy here, so it does not also skew.
-            self._grab_paste(handle, start_x, start_y, skew=False)
-            return
+            return PasteGrab(self, self._paste, handle, start_x, start_y, skew=False)
 
         # Only the select tool picks the pixels up; the others paint over them.
         if self._selection_at(start_x, start_y) is not None:
             self._lift_selection(copy)
-            self._paste_origin = (self._paste.x, self._paste.y)
-            self._set_cursor("paste")
-            return
+            return PasteMove(self, self._paste)
 
         if handle is not None:
-            self._resize_handle = handle
-            self._resize_size = (self._document.width, self._document.height)
-            self._set_cursor(handle)
-            self.queue_draw()
-            return
+            return CanvasResize(self, handle)
 
         if not self.active_tool.in_progress:
             self._shape_button = gesture.get_current_button()
@@ -350,6 +274,7 @@ class PointerMixin:
         if self.active_tool.repeat_ms:
             self._repeat_source = GLib.timeout_add(self.active_tool.repeat_ms, self._on_repeat)
         self.queue_draw()
+        return Stroke(self)
 
     def _press_in_background(self, x: float, y: float) -> None:
         """Run a slow press, such as a fill, off the UI thread.
@@ -385,6 +310,7 @@ class PointerMixin:
                 self._finish_stroke(*release)
             else:
                 self.queue_draw()
+            self._float_waiting_paste()
             if error is not None:
                 raise error
 
@@ -404,132 +330,32 @@ class PointerMixin:
             self._repeat_source = 0
 
     def _on_drag_update(self, gesture, offset_x, offset_y):
-        if self._drag_origin is None:
+        if self._drag_origin is None or self._drag is None:
             return
-        offset_x, offset_y = offset_x / self.zoom, offset_y / self.zoom
-        x, y = self._drag_origin[0] + offset_x, self._drag_origin[1] + offset_y
-
-        if self._text_origin is not None:
-            if not self._text_moved and max(abs(offset_x), abs(offset_y)) < MOVE_THRESHOLD:
-                # Still small enough to be the wobble of a click placing the caret.
-                return
-            self._text_moved = True
-            self._text.move_to(self._text_origin[0] + offset_x, self._text_origin[1] + offset_y)
-            self._refresh_text()
-            return
-
-        if self._paste_grab is not None:
-            self._follow_paste_grab(
-                x, y, bool(gesture.get_current_event_state() & Gdk.ModifierType.SHIFT_MASK)
-            )
-            return
-
-        if self._paste_resize_handle is not None:
-            self._resize_paste(x, y)
-            return
-
-        if self._shape_adjusting:
-            self.active_tool.drag_to(
-                x, y, bool(gesture.get_current_event_state() & Gdk.ModifierType.SHIFT_MASK)
-            )
-            self.queue_draw()
-            return
-
-        if self._paste_origin is not None:
-            self._paste.move_to(self._paste_origin[0] + offset_x, self._paste_origin[1] + offset_y)
-            self._sync_content_size()
-            self.queue_draw()
-            self.emit("floating-changed")
-            return
-
-        if self._resize_handle is not None:
-            self._resize_size = self._resized_to(x, y)
-            self._sync_content_size()
-            self.emit("resize-preview", *self._resize_size)
-            self.queue_draw()
-            return
-
-        if self._drag_context is None or self._working:
-            return
-
-        self._drag_context.constrain = bool(
-            gesture.get_current_event_state() & Gdk.ModifierType.SHIFT_MASK
-        )
-        self.active_tool.motion(self._drag_context, x, y)
-        self.queue_draw()
+        self._drag_offset = (offset_x, offset_y)
+        self._drag.update(*self._drag_point(gesture, offset_x, offset_y))
 
     def _on_drag_end(self, gesture, offset_x, offset_y):
         if self._drag_origin is None:
             return
-        offset_x, offset_y = offset_x / self.zoom, offset_y / self.zoom
-        x, y = self._drag_origin[0] + offset_x, self._drag_origin[1] + offset_y
-
-        if self._text_origin is not None:
-            if not self._text_moved:
-                # A click rather than a drag: put the caret where it landed.
-                self._text.caret_at(x, y)
-            self._text_origin = None
-            self._text_moved = False
+        drag, self._drag = self._drag, None
+        try:
+            if drag is not None:
+                drag.end(*self._drag_point(gesture, offset_x, offset_y))
+        finally:
+            # Whatever became of what it held, the button is up.
             self._drag_origin = None
-            self._refresh_text()
-            return
+            self._float_waiting_paste()
 
-        if self._paste_grab is not None:
-            self._follow_paste_grab(
-                x, y, bool(gesture.get_current_event_state() & Gdk.ModifierType.SHIFT_MASK)
-            )
-            self._paste_grab = None
-            self._drag_origin = None
-            self._set_cursor(None)
-            return
+    def _on_drag_cancel(self, gesture, _sequence) -> None:
+        """The drag was taken away, as when a touch turns into a pinch: it ends where it got to."""
+        self._on_drag_end(gesture, *self._drag_offset)
 
-        if self._paste_resize_handle is not None:
-            self._resize_paste(x, y)
-            self._paste_resize_handle = None
-            self._paste_resize_origin = None
-            self._drag_origin = None
-            return
-
-        if self._shape_adjusting:
-            self.active_tool.drag_to(
-                x, y, bool(gesture.get_current_event_state() & Gdk.ModifierType.SHIFT_MASK)
-            )
-            self._shape_adjusting = False
-            self._drag_origin = None
-            self.queue_draw()
-            return
-
-        if self._paste_origin is not None or self._paste is not None:
-            # A floating paste stays floating; the drag only moved it.
-            self._paste_origin = None
-            self._drag_origin = None
-            return
-
-        if self._resize_handle is not None:
-            width, height = self._resized_to(x, y)
-            self._resize_handle = None
-            self._resize_size = None
-            self._drag_origin = None
-            self._document.resize(width, height)
-            self._sync_content_size()
-            self.queue_draw()
-            return
-
-        if self._drag_context is None:
-            # The press landed a paste instead of starting a stroke.
-            self._drag_origin = None
-            return
-
-        self._stop_repeat()
-        self._drag_context.constrain = bool(
-            gesture.get_current_event_state() & Gdk.ModifierType.SHIFT_MASK
-        )
-        if self._working:
-            # The press is still at work; the stroke ends once it is done.
-            self._pending_release = (x, y)
-            self._drag_origin = None
-            return
-        self._finish_stroke(x, y)
+    def _drag_point(self, gesture, offset_x: float, offset_y: float):
+        """Where a drag has got to on the image, how far that is from its start, and whether Shift is held."""
+        dx, dy = offset_x / self.zoom, offset_y / self.zoom
+        shift = bool(gesture.get_current_event_state() & Gdk.ModifierType.SHIFT_MASK)
+        return self._drag_origin[0] + dx, self._drag_origin[1] + dy, dx, dy, shift
 
     def _finish_stroke(self, x: float, y: float) -> None:
         """Let the tool finish, and keep what it painted as one step to undo."""

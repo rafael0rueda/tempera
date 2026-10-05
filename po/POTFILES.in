@@ -13,6 +13,7 @@ tempera/main.py
 tempera/openraster.py
 tempera/preferences.py
 tempera/printing.py
+tempera/recovery.py
 tempera/screen_color.py
 tempera/shortcuts.py
 tempera/shortcuts_dialog.py
@@ -44,4 +45,5 @@ tempera/window/layers.py
 tempera/window/layers_panel.py
 tempera/window/layout.py
 tempera/window/options_bar.py
+tempera/window/session.py
 tempera/window/window.py

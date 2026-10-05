@@ -12,11 +12,11 @@ import cairo
 from gi.repository import Gdk, Gio, GLib
 
 from ..clipboard import surface_from_texture
-from ..document import MAX_SIZE
+from ..document import MAX_SIZE, crop_surface
 from ..file_io import load_surface_async
 from ..i18n import _
 from ..interface_size import scaled
-from ..regions import without_color
+from ..regions import of_color, without_color
 from ..text import TextBox, TextStyle
 from ..tools.base import rect_handles
 
@@ -29,6 +29,11 @@ CUT_OFF_MESSAGE = _("Part of the image was cut off: a canvas can be at most {siz
 # Arrow-key nudge for a selection or floating paste, in image pixels; Shift steps further.
 NUDGE_STEP = 1
 NUDGE_STEP_FAST = 10
+
+
+def too_large_message(layers: int) -> str:
+    """What to say when a picture cannot grow because of the memory its layers would take."""
+    return _("A picture with {count} layers cannot be that large").format(count=layers)
 
 
 # The rotate grip sits this far above the middle of a paste's top edge, in
@@ -86,6 +91,8 @@ class FloatingPaste:
     angle: float = 0.0
     shear_x: float = 0.0
     shear_y: float = 0.0
+    # The colour a transparent selection is leaving out of it, if any.
+    left_out: Gdk.RGBA | None = None
 
     def __post_init__(self) -> None:
         if self.original is None:
@@ -93,7 +100,36 @@ class FloatingPaste:
 
     def leave_out(self, color: Gdk.RGBA | None) -> None:
         """Make the pixels of one colour see-through, or with None bring them all back."""
+        self.left_out = color
         self.surface = self.original if color is None else without_color(self.original, color)
+
+    @property
+    def in_place(self) -> bool:
+        """Whether it was lifted from the picture and sits, unchanged, just where it came from."""
+        return (
+            self.source is not None
+            and not self.transformed
+            and (self.scale_x, self.scale_y) == (1.0, 1.0)
+            and (round(self.x), round(self.y)) == tuple(self.source[:2])
+        )
+
+    def vacated(self) -> cairo.ImageSurface | None:
+        """Which pixels of where it came from it took with it, as a mask; None for all of them.
+
+        The colour a transparent selection leaves out stays behind.
+        """
+        if self.left_out is None:
+            return self.source_mask
+        width, height = self.original.get_width(), self.original.get_height()
+        mask = cairo.ImageSurface(cairo.FORMAT_A8, width, height)
+        cr = cairo.Context(mask)
+        if self.source_mask is None:
+            cr.paint()
+        else:
+            cr.mask_surface(self.source_mask, 0, 0)
+        cr.set_operator(cairo.OPERATOR_DEST_OUT)
+        cr.mask_surface(of_color(self.original, self.left_out), 0, 0)
+        return mask
 
     @property
     def width(self) -> int:
@@ -249,15 +285,18 @@ class FloatingPaste:
         width, height = grabbed.box_size
         u, v = grabbed.to_box(*point)
         left, top, right, bottom = 0.0, 0.0, width, height
+        # Upright, it stops at the top and left of the canvas, which only
+        # grows right and down; turned, what goes past them is cut off on landing.
+        least_u, least_v = (-math.inf, -math.inf) if grabbed.transformed else (-grabbed.x, -grabbed.y)
         if "w" in handle:
-            left = min(u, right - 1)
+            left = max(min(u, right - 1), right - MAX_SIZE, least_u)
         elif "e" in handle:
-            right = max(u, left + 1)
+            right = min(max(u, left + 1), left + MAX_SIZE)
         if "n" in handle:
-            top = min(v, bottom - 1)
+            top = max(min(v, bottom - 1), bottom - MAX_SIZE, least_v)
         elif "s" in handle:
-            bottom = max(v, top + 1)
-        new_width, new_height = min(right - left, MAX_SIZE), min(bottom - top, MAX_SIZE)
+            bottom = min(max(v, top + 1), top + MAX_SIZE)
+        new_width, new_height = right - left, bottom - top
         cx, cy = grabbed.to_image((left + right) / 2, (top + bottom) / 2)
         self.scale_x = new_width / self.surface.get_width()
         self.scale_y = new_height / self.surface.get_height()
@@ -283,7 +322,13 @@ class FloatingPaste:
     def landing(self) -> tuple[cairo.ImageSurface, int, int]:
         """The pixels as they will land, and where their top-left corner goes."""
         if not self.transformed:
-            return self.rendered(), round(self.x), round(self.y)
+            pixels, x, y = self.rendered(), round(self.x), round(self.y)
+            if x < 0 or y < 0:
+                # Stretched while turned and then set upright again, it can
+                # reach past the top-left, where it is cut off like any other.
+                width, height = pixels.get_width() + min(x, 0), pixels.get_height() + min(y, 0)
+                pixels = crop_surface(pixels, max(0, -x), max(0, -y), max(1, width), max(1, height))
+            return pixels, max(0, x), max(0, y)
         left, top, width, height = self.bounds()
         # What lies above or left of the canvas is lost: it only grows right and down.
         x0, y0 = max(0, math.floor(left)), max(0, math.floor(top))
@@ -331,6 +376,10 @@ class FloatingMixin:
 
     def _nudge_paste(self, delta: tuple[float, float]) -> None:
         self._paste.move_to(self._paste.x + delta[0], self._paste.y + delta[1])
+        self._paste_changed()
+
+    def _paste_changed(self) -> None:
+        """Show a floating paste where and how it now is."""
         self._sync_content_size()
         self.queue_draw()
         self.emit("floating-changed")
@@ -418,7 +467,23 @@ class FloatingMixin:
         source: tuple[int, int, int, int] | None = None,
         source_mask: cairo.ImageSurface | None = None,
     ) -> None:
-        """Float an image over the canvas until it is committed or discarded."""
+        """Float an image over the canvas until it is committed or discarded.
+
+        One that arrives while a button is held, as a paste read from the
+        clipboard or a dropped file can, waits for the drag to end: landing
+        in the middle of a stroke would cut the stroke in two.
+        """
+        if self._drag_origin is not None or self._working:
+            self._waiting_paste = (surface, x, y, source, source_mask)
+            return
+        self._float(surface, x, y, source, source_mask)
+
+    def _float_waiting_paste(self) -> None:
+        if self._waiting_paste is not None and not self._working:
+            waiting, self._waiting_paste = self._waiting_paste, None
+            self._float(*waiting)
+
+    def _float(self, surface, x, y, source, source_mask) -> None:
         self.commit_floating()
         # Whatever was selected is not what is about to hover over the canvas.
         self.set_selection(None)
@@ -473,12 +538,14 @@ class FloatingMixin:
         if self._paste is None:
             return False
         paste, self._paste = self._paste, None
-        pixels, x, y = paste.landing()
-        cut_off = self._document.paste(
-            pixels, x, y, erase=paste.source, erase_mask=paste.source_mask
-        )
-        if cut_off:
-            self.emit("message", CUT_OFF_MESSAGE)
+        # Picked up and put straight back, it changes nothing and is no step to undo.
+        if not paste.in_place:
+            pixels, x, y = paste.landing()
+            cut_off = self._document.paste(
+                pixels, x, y, erase=paste.source, erase_mask=paste.vacated()
+            )
+            if cut_off:
+                self.emit("message", CUT_OFF_MESSAGE)
         self._sync_content_size()
         self.queue_draw()
         self.emit("floating-changed")
@@ -533,8 +600,6 @@ class FloatingMixin:
         return True
 
     def _end_typing(self) -> None:
-        self._text_origin = None
-        self._text_moved = False
         self._stop_blink()
         self._im.focus_out()
         self._im.reset()
@@ -584,8 +649,9 @@ class FloatingMixin:
         self._refresh_text()
 
     def _on_key_pressed(self, controller, keyval, keycode, state) -> bool:
-        if self._working:
-            # A fill is still painting; Delete or a nudge would paint under it.
+        if self.is_dragging:
+            # A button is held, or a fill is still painting: Esc or Delete now
+            # would take away what the drag holds, or paint under the fill.
             return False
         if self._text is not None:
             return self._on_text_key(keyval, state)
@@ -656,6 +722,8 @@ class FloatingMixin:
         return True
 
     def _on_drop(self, target, value, x: float, y: float) -> bool:
+        if self.frozen:
+            return False
         x, y = self._to_image(x, y)
         if isinstance(value, Gdk.FileList):
             files = value.get_files()

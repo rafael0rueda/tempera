@@ -13,10 +13,6 @@ from .base import Tool, ToolContext
 TOLERANCE = 32
 
 
-# The name the tests and older code know it by.
-_premultiplied = premultiplied
-
-
 def flood_fill(
     surface: cairo.ImageSurface, x: int, y: int, color: Gdk.RGBA, tolerance: int = TOLERANCE
 ) -> tuple[int, int, int, int] | None:
@@ -29,20 +25,24 @@ def flood_fill(
         return None
 
     surface.flush()
-    replacement = premultiplied(color)
-    target = target_at(surface, x, y)
-    # Filling with a colour that still matches the target would never terminate.
-    if all(abs(replacement[i] - target[i]) <= tolerance for i in range(4)):
+    replacement_bytes = bytes(premultiplied(color))
+    # A colour close to the one clicked on is still a fill: every pixel
+    # within the tolerance takes it. The search reads each row before any of
+    # it is painted, so it ends whatever the colour.
+    if tolerance == 0 and replacement_bytes == target_at(surface, x, y):
         return None
 
     stride = surface.get_stride()
     data = surface.get_data()
-    replacement_bytes = bytes(replacement)
     # The bounds of everything painted, as [left, right) and [top, bottom).
     bounds = [width, height, 0, 0]
     for row_y, left, right in flood_spans(surface, x, y, tolerance):
         row = row_y * stride
-        data[row + left * 4:row + right * 4] = replacement_bytes * (right - left)
+        run = replacement_bytes * (right - left)
+        if data[row + left * 4:row + right * 4] == run:
+            # Already this colour: not something it painted.
+            continue
+        data[row + left * 4:row + right * 4] = run
         bounds[0] = min(bounds[0], left)
         bounds[1] = min(bounds[1], row_y)
         bounds[2] = max(bounds[2], right)
@@ -50,6 +50,8 @@ def flood_fill(
 
     surface.mark_dirty()
     left, top, right, bottom = bounds
+    if right <= left:
+        return None
     return left, top, right - left, bottom - top
 
 

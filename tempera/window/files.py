@@ -76,14 +76,19 @@ class FilesMixin:
     def _open_file(self, file: Gio.File, error_format: str, on_error=None) -> None:
         """Read an image in the background and show it, or say why it could not be."""
         self._set_busy(True)
+        # Left alone until the file is read: what is drawn while waiting would
+        # go with the picture it replaces.
+        self.canvas.frozen = True
 
         def on_document(document: Document) -> None:
             self._set_busy(False)
+            self.canvas.frozen = False
             self._set_document(document)
             self._remember_recent(file)
 
         def on_error_message(message: str) -> None:
             self._set_busy(False)
+            self.canvas.frozen = False
             self.show_toast(error_format.format(message=message))
             if on_error is not None:
                 on_error()

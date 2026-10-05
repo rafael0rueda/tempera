@@ -14,11 +14,20 @@ from __future__ import annotations
 import io
 import struct
 import zipfile
+import zlib
 from xml.etree import ElementTree
 
 import cairo
 
-from .document import MAX_LAYERS, MAX_SIZE, TRANSPARENT, Layer, flatten, new_surface
+from .document import (
+    MAX_SIZE,
+    TRANSPARENT,
+    Layer,
+    clean_name,
+    flatten,
+    layer_limit,
+    new_surface,
+)
 from .i18n import _
 
 MIMETYPE = "image/openraster"
@@ -74,7 +83,7 @@ def write_openraster(
             ElementTree.SubElement(
                 stack,
                 "layer",
-                name=layer.name,
+                name=clean_name(layer.name),
                 src=source,
                 x="0",
                 y="0",
@@ -102,8 +111,11 @@ def _read_member(archive: zipfile.ZipFile, name: str, limit: int) -> bytes:
             data = member.read(limit + 1)
     except KeyError:
         raise OpenRasterError(_("The file is missing “{name}”").format(name=name)) from None
-    except (zipfile.BadZipFile, OSError, EOFError) as error:
+    except (zipfile.BadZipFile, OSError, EOFError, zlib.error) as error:
         raise OpenRasterError(str(error)) from None
+    except (RuntimeError, NotImplementedError):
+        # A member locked with a password, or packed in a way Python cannot unpack.
+        raise OpenRasterError(_("“{name}” cannot be read").format(name=name)) from None
     if len(data) > limit:
         raise OpenRasterError(_("“{name}” is too big").format(name=name))
     return data
@@ -128,7 +140,9 @@ def _number(value: str | None, fallback: float, kind=float):
         return fallback
 
 
-def _layers_in(element, x: int, y: int, opacity: float, visible: bool, found: list) -> None:
+def _layers_in(
+    element, x: int, y: int, opacity: float, visible: bool, found: list, limit: int
+) -> None:
     """Every layer inside a stack, top first, with the offsets, opacity and visibility
     of the stacks around it carried down."""
     for child in element:
@@ -137,12 +151,12 @@ def _layers_in(element, x: int, y: int, opacity: float, visible: bool, found: li
         child_opacity = opacity * max(0.0, min(_number(child.get("opacity"), 1.0), 1.0))
         child_visible = visible and child.get("visibility", "visible") != "hidden"
         if child.tag == "stack":
-            _layers_in(child, child_x, child_y, child_opacity, child_visible, found)
+            _layers_in(child, child_x, child_y, child_opacity, child_visible, found, limit)
         elif child.tag == "layer" and child.get("src"):
             found.append((child, child_x, child_y, child_opacity, child_visible))
-        if len(found) > MAX_LAYERS:
+        if len(found) > limit:
             raise OpenRasterError(
-                _("A picture can have at most {count} layers").format(count=MAX_LAYERS)
+                _("A picture this size can have at most {count} layers").format(count=limit)
             )
 
 
@@ -177,8 +191,11 @@ def read_openraster(stream) -> tuple[int, int, list[Layer]]:
             raise OpenRasterError(_("The file's list of layers is damaged"))
         width, height = _dimension(image.get("w")), _dimension(image.get("h"))
         found: list = []
+        # Counted before any is decoded: each one takes a whole canvas of
+        # memory, however small its PNG.
+        limit = layer_limit(width, height)
         for stack in image.findall("stack"):
-            _layers_in(stack, 0, 0, 1.0, True, found)
+            _layers_in(stack, 0, 0, 1.0, True, found, limit)
         if not found:
             raise OpenRasterError(_("The file has no layers"))
 
@@ -187,10 +204,13 @@ def read_openraster(stream) -> tuple[int, int, list[Layer]]:
             source = element.get("src")
             pixels = _decode_png(_read_member(archive, source, MAX_LAYER_BYTES), source)
             # Each layer covers the whole canvas here, wherever it sat in the file.
-            surface = new_surface(width, height, TRANSPARENT)
-            cr = cairo.Context(surface)
-            cr.set_source_surface(pixels, x, y)
-            cr.paint()
+            try:
+                surface = new_surface(width, height, TRANSPARENT)
+                cr = cairo.Context(surface)
+                cr.set_source_surface(pixels, x, y)
+                cr.paint()
+            except (cairo.Error, MemoryError):
+                raise OpenRasterError(_("There is not enough memory to open the image")) from None
             name = element.get("name") or _("Layer {number}").format(number=len(layers) + 1)
             layers.append(Layer(surface, name, visible, opacity))
     return width, height, layers

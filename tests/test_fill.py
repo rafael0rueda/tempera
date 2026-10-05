@@ -5,13 +5,15 @@ import random
 import threading
 import time
 
+import cairo
 import pytest
 from gi.repository import Gdk, GLib
 
 from tempera.canvas import Canvas, pointer
 from tempera.color import ColorState
 from tempera.document import Document, changed_rect, copy_surface, new_surface, same_pixels
-from tempera.tools.fill import _premultiplied, flood_fill
+from tempera.regions import premultiplied
+from tempera.tools.fill import flood_fill
 
 from pixels import paint_pixel, pixel_at
 
@@ -70,22 +72,27 @@ def test_out_of_bounds_coordinates_do_nothing():
 
 
 def reference_flood_fill(surface, x, y, color, tolerance):
-    """The original pixel-at-a-time fill, kept as the behaviour to match."""
+    """A pixel-at-a-time fill, kept as the behaviour to match: every pixel joined to
+    the one clicked through pixels within the tolerance of it takes the colour."""
     width, height = surface.get_width(), surface.get_height()
     if not (0 <= x < width and 0 <= y < height):
         return False
     surface.flush()
     stride = surface.get_stride()
     data = surface.get_data()
-    replacement = _premultiplied(color)
+    replacement = premultiplied(color)
     origin = y * stride + x * 4
     target = tuple(data[origin:origin + 4])
+    # As the picture was: a colour within the tolerance of the one clicked
+    # would otherwise match again once painted, and never stop.
+    before = bytes(data)
+    painted = set()
 
     def matches(offset):
-        return all(abs(data[offset + i] - target[i]) <= tolerance for i in range(4))
+        return offset not in painted and all(
+            abs(before[offset + i] - target[i]) <= tolerance for i in range(4)
+        )
 
-    if all(abs(replacement[i] - target[i]) <= tolerance for i in range(4)):
-        return False
     replacement_bytes = bytes(replacement)
     stack = [(x, y)]
     while stack:
@@ -100,6 +107,7 @@ def reference_flood_fill(surface, x, y, color, tolerance):
         while right < width - 1 and matches(row + (right + 1) * 4):
             right += 1
         data[row + left * 4:row + (right + 1) * 4] = replacement_bytes * (right - left + 1)
+        painted.update(row + column * 4 for column in range(left, right + 1))
         for neighbour_y in (seed_y - 1, seed_y + 1):
             if not 0 <= neighbour_y < height:
                 continue
@@ -112,7 +120,7 @@ def reference_flood_fill(surface, x, y, color, tolerance):
                         scan += 1
                 scan += 1
     surface.mark_dirty()
-    return True
+    return bytes(data) != before
 
 
 def random_image(rng, width, height):
@@ -280,3 +288,39 @@ def test_a_fill_runs_on_a_thread_of_its_own(canvas):
     assert threads and threads[0] is not threading.main_thread()
     assert not canvas.is_dragging
     assert pixel_at(canvas.document.surface, 5, 5) == (0, 255, 0, 255)
+
+
+# A colour close to the one clicked on
+
+
+def test_a_colour_within_the_tolerance_of_the_one_clicked_still_fills():
+    surface = new_surface(6, 6, WHITE)
+    paint_pixel(surface, 3, 3, (0.0, 0.0, 0.0, 1.0))
+    painted = flood_fill(surface, 0, 0, rgba(1, 1, 235 / 255))
+    assert painted == (0, 0, 6, 6)
+    assert pixel_at(surface, 5, 5) == (255, 255, 235, 255)
+    assert pixel_at(surface, 3, 3) == (0, 0, 0, 255)
+
+
+def test_filling_with_the_colour_clicked_evens_out_the_near_matches():
+    surface = new_surface(6, 3, WHITE)
+    paint_pixel(surface, 4, 1, (0.98, 0.98, 0.98, 1.0))
+    # Only the row that had something to even out counts as painted.
+    assert flood_fill(surface, 0, 0, rgba(1, 1, 1)) == (0, 1, 6, 1)
+    assert pixel_at(surface, 4, 1) == (255, 255, 255, 255)
+
+
+def test_a_fill_lays_down_the_very_bytes_a_brush_does():
+    rng = random.Random(7)
+    for _each in range(200):
+        color = rgba(rng.random(), rng.random(), rng.random())
+        brushed = new_surface(12, 12, WHITE)
+        cr = cairo.Context(brushed)
+        cr.set_source_rgba(color.red, color.green, color.blue, color.alpha)
+        cr.set_line_width(8)
+        cr.move_to(2, 6)
+        cr.line_to(10, 6)
+        cr.stroke()
+        filled = new_surface(1, 1, WHITE)
+        flood_fill(filled, 0, 0, color, 0)
+        assert pixel_at(filled, 0, 0) == pixel_at(brushed, 6, 6)

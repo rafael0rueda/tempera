@@ -21,9 +21,10 @@ UNDO_BUDGET = 1024 * 1024 * 1024
 DEFAULT_WIDTH = 800
 DEFAULT_HEIGHT = 600
 MAX_SIZE = 8192
-# Each layer is a whole canvas of pixels, so this also bounds the memory a
-# picture can take.
 MAX_LAYERS = 100
+# Each layer is a whole canvas of pixels, so a large picture can have fewer of
+# them: a hundred layers of the largest canvas would take 25.6 GB.
+LAYER_BUDGET = 4 * 1024 * 1024 * 1024
 WHITE = (1.0, 1.0, 1.0, 1.0)
 TRANSPARENT = (0.0, 0.0, 0.0, 0.0)
 
@@ -39,6 +40,18 @@ def new_surface(width: int, height: int, fill=(1.0, 1.0, 1.0, 1.0)) -> cairo.Ima
     cr.set_source_rgba(*fill)
     cr.paint()
     return surface
+
+
+def layer_limit(width: int, height: int) -> int:
+    """How many layers a picture of this size can have."""
+    return max(1, min(MAX_LAYERS, LAYER_BUDGET // (max(1, width) * max(1, height) * 4)))
+
+
+def clean_name(name: str) -> str:
+    """A layer's name without the control characters a file cannot carry."""
+    return "".join(
+        character for character in name if character >= " " and character not in "\x7f\ufffe\uffff"
+    ).strip()
 
 
 def surface_from_pixbuf(pixbuf: GdkPixbuf.Pixbuf) -> cairo.ImageSurface:
@@ -346,6 +359,9 @@ class Document(GObject.Object):
         # How many undo steps deep the saved image sits, so undoing back to it
         # counts as unmodified. None once no undo or redo can reach it again.
         self._saved_depth: int | None = 0
+        # The same for an image a save is still writing, which becomes the
+        # saved one when that finishes.
+        self._saving_depth: int | None = None
         # The current layer as it was when begin_change() was called, and the
         # layers around it, until the change is committed and only the part it
         # altered is kept.
@@ -375,8 +391,13 @@ class Document(GObject.Object):
         return self.layers[0].surface.get_height()
 
     @property
+    def layer_limit(self) -> int:
+        """How many layers the picture can have, at the size it is."""
+        return layer_limit(self.width, self.height)
+
+    @property
     def title(self) -> str:
-        return self.file.get_basename() if self.file else "Untitled"
+        return self.file.get_basename() if self.file else _("Untitled")
 
     @property
     def modified(self) -> bool:
@@ -388,18 +409,18 @@ class Document(GObject.Object):
         # where the saved one was.
         self._saved_depth = None if value else len(self._undo)
 
-    def save_point(self) -> int:
-        """How deep the history is now, to mark as saved once a save finishes."""
-        return len(self._undo)
+    def save_point(self) -> None:
+        """Note the image as it is now, to mark as saved once a save of it finishes."""
+        self._saving_depth = len(self._undo)
 
-    def mark_saved(self, depth: int) -> None:
-        """Take the image at that point in the history as the saved one.
+    def mark_saved(self) -> None:
+        """Take the image noted by save_point() as the saved one.
 
         Saving encodes and writes in the background, so the user may have drawn
         on since; the marker belongs to what was written, not to what is on
-        screen now.
+        screen now, and follows it as the history moves on.
         """
-        self._saved_depth = depth
+        self._saved_depth, self._saving_depth = self._saving_depth, None
         self.emit("state-changed")
 
     # The picture as a whole
@@ -437,9 +458,13 @@ class Document(GObject.Object):
     def _record(self, step: Patch | StackChange) -> None:
         self._adjusting = None
         self._undo.append(step)
-        if self._redo and self._saved_depth is not None and self._saved_depth >= len(self._undo):
-            # The saved image was among the redo steps about to be dropped.
-            self._saved_depth = None
+        if self._redo:
+            # A saved image among the redo steps about to be dropped is out of reach.
+            reach = len(self._undo)
+            if self._saved_depth is not None and self._saved_depth >= reach:
+                self._saved_depth = None
+            if self._saving_depth is not None and self._saving_depth >= reach:
+                self._saving_depth = None
         self._redo = []
         self._trim_history()
 
@@ -489,10 +514,13 @@ class Document(GObject.Object):
         if excess == 0:
             return
         del self._undo[:excess]
+        # Trimmed away along with the oldest steps, a saved image is out of reach.
         if self._saved_depth is not None:
-            # Trimmed away along with the oldest steps, it is out of reach.
             depth = self._saved_depth - excess
             self._saved_depth = depth if depth >= 0 else None
+        if self._saving_depth is not None:
+            depth = self._saving_depth - excess
+            self._saving_depth = depth if depth >= 0 else None
 
     @property
     def can_undo(self) -> bool:
@@ -552,7 +580,7 @@ class Document(GObject.Object):
 
     def add_layer(self) -> bool:
         """A new, empty layer just above the current one, which it becomes."""
-        if len(self.layers) >= MAX_LAYERS:
+        if len(self.layers) >= self.layer_limit:
             return False
         layer = Layer(new_surface(self.width, self.height, TRANSPARENT), self._new_layer_name())
 
@@ -565,7 +593,7 @@ class Document(GObject.Object):
 
     def duplicate_layer(self) -> bool:
         """A copy of the current layer just above it, which becomes the current one."""
-        if len(self.layers) >= MAX_LAYERS:
+        if len(self.layers) >= self.layer_limit:
             return False
         original = self.layer
         copy = Layer(
@@ -649,6 +677,9 @@ class Document(GObject.Object):
         return self._set_layer(index, "visible", visible)
 
     def rename_layer(self, index: int, name: str) -> bool:
+        name = clean_name(name)
+        if not name:
+            return False
         return self._set_layer(index, "name", name)
 
     def set_layer_opacity(self, index: int, opacity: float) -> bool:
@@ -707,20 +738,29 @@ class Document(GObject.Object):
 
         self._change_stack(change, pixels=True)
 
-    def resize(self, width: int, height: int, fill=WHITE) -> None:
+    def fits(self, width: int, height: int) -> bool:
+        """Whether the picture could be this size with the layers it has."""
+        return len(self.layers) <= layer_limit(width, height)
+
+    def resize(self, width: int, height: int, fill=WHITE) -> bool:
         """Grow or crop the canvas, keeping the existing pixels anchored top-left.
 
         The bottom layer grows with `fill`, the ones above it with nothing.
+        Returns False, changing nothing, when its layers would take too much
+        memory at that size.
         """
         width = max(1, min(int(width), MAX_SIZE))
         height = max(1, min(int(height), MAX_SIZE))
         if width == self.width and height == self.height:
-            return
+            return True
+        if not self.fits(width, height):
+            return False
         self._transform(
             lambda index, surface: self._resized_surface(
                 surface, width, height, fill if index == 0 else TRANSPARENT
             )
         )
+        return True
 
     @staticmethod
     def _scaled_surface(surface: cairo.ImageSurface, width: int, height: int) -> cairo.ImageSurface:
@@ -739,13 +779,20 @@ class Document(GObject.Object):
         cr.paint()
         return scaled
 
-    def scale(self, width: int, height: int) -> None:
-        """Stretch or shrink the picture itself, rather than the canvas around it."""
+    def scale(self, width: int, height: int) -> bool:
+        """Stretch or shrink the picture itself, rather than the canvas around it.
+
+        Returns False, changing nothing, when its layers would take too much
+        memory at that size.
+        """
         width = max(1, min(int(width), MAX_SIZE))
         height = max(1, min(int(height), MAX_SIZE))
         if (width, height) == (self.width, self.height):
-            return
+            return True
+        if not self.fits(width, height):
+            return False
         self._transform(lambda _index, surface: self._scaled_surface(surface, width, height))
+        return True
 
     @staticmethod
     def _rotated_surface(surface: cairo.ImageSurface, clockwise: bool) -> cairo.ImageSurface:
@@ -847,12 +894,15 @@ class Document(GObject.Object):
         The growth, the optional erase of where the pixels came from, and the stamp
         share one undo entry, so a single undo takes back a whole move. Returns
         whether part of the image was cut off because the canvas cannot grow past
-        MAX_SIZE.
+        MAX_SIZE, or as far as it would need to with the layers it has.
         """
         x, y = max(0, int(x)), max(0, int(y))
         cut_off = x + image.get_width() > MAX_SIZE or y + image.get_height() > MAX_SIZE
         width = min(max(self.width, x + image.get_width()), MAX_SIZE)
         height = min(max(self.height, y + image.get_height()), MAX_SIZE)
+        if not self.fits(width, height):
+            cut_off = (width, height) != (self.width, self.height)
+            width, height = self.width, self.height
 
         self.begin_change()
         if (width, height) != (self.width, self.height):

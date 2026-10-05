@@ -122,7 +122,6 @@ def test_a_paste_lands_on_its_layer_before_the_layers_change(window):
 
 def test_the_limit_on_layers_is_said(window, monkeypatch):
     monkeypatch.setattr(document_module, "MAX_LAYERS", 1)
-    monkeypatch.setattr(layers_module, "MAX_LAYERS", 1)
     toasts = []
     window.show_toast = toasts.append
     window._sync_layer_actions()

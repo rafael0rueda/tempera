@@ -30,6 +30,7 @@ import cairo
 from gi.repository import GLib
 
 from .document import Document, Layer, copy_surface
+from .i18n import _
 from .openraster import read_openraster, write_openraster
 
 # How often a window with unsaved changes keeps a fresh copy, in seconds.
@@ -54,6 +55,10 @@ def _write_private(path: Path, write) -> None:
     descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(descriptor, "wb") as stream:
         write(stream)
+        # On the disk before it takes the old copy's place: a power cut must
+        # not leave an empty file where a whole one was.
+        stream.flush()
+        os.fsync(stream.fileno())
     os.replace(temporary, path)
 
 
@@ -90,8 +95,8 @@ class RecoverySlot:
         # copy is no longer wanted.
         self._generation = 0
         self._writing = False
-        # The newest copy asked for while another was being written.
-        self._waiting: tuple[list[Layer], dict] | None = None
+        # The newest copy asked for while another was being written, and who to tell.
+        self._waiting: tuple[tuple[list[Layer], dict], object] | None = None
 
     @property
     def image_path(self) -> Path:
@@ -111,8 +116,13 @@ class RecoverySlot:
         return self._lock is not None
 
     def save(self, document: Document, info: dict, done=None) -> None:
-        """Keep a copy of the image as it is now; the writing happens in the background."""
+        """Keep a copy of the image as it is now; the writing happens in the background.
+
+        `done` is then called with None, or with why the copy could not be kept.
+        """
         if not self._claim():
+            if done is not None:
+                done(_("the folder for it cannot be written to"))
             return
         # Copied here, so drawing on can carry on while the copy is written.
         layers = [
@@ -129,7 +139,7 @@ class RecoverySlot:
         )
         request = (layers, info)
         if self._writing:
-            self._waiting = request
+            self._waiting = (request, done)
             return
         self._start(request, done)
 
@@ -137,8 +147,10 @@ class RecoverySlot:
         self._writing = True
         generation = self._generation
         layers, info = request
+        error: str | None = None
 
         def write() -> None:
+            nonlocal error
             try:
                 # The image first: a description on disk means its image is complete.
                 _write_private(
@@ -150,8 +162,11 @@ class RecoverySlot:
                 _write_private(
                     self.json_path, lambda stream: stream.write(json.dumps(info).encode())
                 )
-            except OSError:
-                pass
+            except OSError as failure:
+                error = failure.strerror or str(failure)
+            except Exception as failure:  # noqa: BLE001
+                # Whatever went wrong, the next copy must still get its turn.
+                error = str(failure) or type(failure).__name__
             GLib.idle_add(finished)
 
         def finished() -> bool:
@@ -160,11 +175,11 @@ class RecoverySlot:
                 # Saved, discarded or closed while this was being written; a
                 # closed window has let go of its lock file too.
                 _remove(self.directory, self.id, keep_lock=self._lock is not None)
+            if done is not None:
+                done(error)
             if self._waiting is not None:
-                waiting, self._waiting = self._waiting, None
-                self._start(waiting, done)
-            elif done is not None:
-                done()
+                (waiting, then), self._waiting = self._waiting, None
+                self._start(waiting, then)
             return GLib.SOURCE_REMOVE
 
         threading.Thread(target=write, daemon=True).start()
@@ -206,7 +221,7 @@ class Leftover:
 
     @property
     def title(self) -> str:
-        return str(self.info.get("title") or "Untitled")
+        return str(self.info.get("title") or _("Untitled"))
 
     @property
     def uri(self) -> str | None:

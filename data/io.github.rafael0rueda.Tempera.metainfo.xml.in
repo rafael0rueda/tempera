@@ -66,19 +66,19 @@
   <screenshots>
     <screenshot type="default">
       <caption>A meadow painted on five layers, with the layers panel open</caption>
-      <image type="source" width="1280" height="800">https://raw.githubusercontent.com/rafael0rueda/tempera/v2.0.0/data/screenshots/main-window.png</image>
+      <image type="source" width="1280" height="800">https://raw.githubusercontent.com/rafael0rueda/tempera/v2.0.1/data/screenshots/main-window.png</image>
     </screenshot>
     <screenshot>
       <caption>The dark style, turning the sun on a layer of its own by its grip</caption>
-      <image type="source" width="1280" height="800">https://raw.githubusercontent.com/rafael0rueda/tempera/v2.0.0/data/screenshots/dark-style.png</image>
+      <image type="source" width="1280" height="800">https://raw.githubusercontent.com/rafael0rueda/tempera/v2.0.1/data/screenshots/dark-style.png</image>
     </screenshot>
     <screenshot>
       <caption>A dashed star waiting with grips to resize it, at a bigger interface size</caption>
-      <image type="source" width="1280" height="800">https://raw.githubusercontent.com/rafael0rueda/tempera/v2.0.0/data/screenshots/interface-size.png</image>
+      <image type="source" width="1280" height="800">https://raw.githubusercontent.com/rafael0rueda/tempera/v2.0.1/data/screenshots/interface-size.png</image>
     </screenshot>
     <screenshot>
       <caption>The colour editor, with colours kept for later</caption>
-      <image type="source" width="1280" height="800">https://raw.githubusercontent.com/rafael0rueda/tempera/v2.0.0/data/screenshots/color-editor.png</image>
+      <image type="source" width="1280" height="800">https://raw.githubusercontent.com/rafael0rueda/tempera/v2.0.1/data/screenshots/color-editor.png</image>
     </screenshot>
   </screenshots>
   <categories>
@@ -86,6 +86,29 @@
     <category>RasterGraphics</category>
   </categories>
   <releases>
+    <release version="2.0.1" date="2026-10-05">
+      <description>
+        <p>Fixes for ways Tempera 2 could lose work or get stuck, found by going over it closely.</p>
+        <p>Keeping work safe:</p>
+        <ul>
+          <li>A damaged file could leave a window unable to save, open or export until it was closed; it now says what is wrong and carries on</li>
+          <li>A stroke finished while a big picture was still being saved could be marked as saved, and lost on closing without a question</li>
+          <li>Pressing Esc, Enter, or the keys for Copy or Save while holding one of a selection's grips could leave the canvas refusing everything until Tempera was restarted</li>
+          <li>A paste that arrived in the middle of a stroke left the stroke impossible to undo</li>
+          <li>A copy kept for crash recovery that cannot be written is now said, once, and no longer stops the later ones; a recovered picture's old copy is kept until the new one is safely written</li>
+          <li>Drawing on a picture while another was being opened in its place was thrown away without a question</li>
+        </ul>
+        <p>Other fixes:</p>
+        <ul>
+          <li>Filling with a colour close to the one clicked on, such as pale yellow on white, did nothing</li>
+          <li>A colour mixed in the colour editor or picked from the screen is now filled, and left out of a transparent selection, exactly as a brush paints it</li>
+          <li>Clicking a selection and clicking away no longer counts as a change, and with transparent selection no longer turns the background colour inside it white</li>
+          <li>What a transparent selection leaves out stays where it was when the rest is moved</li>
+          <li>A small OpenRaster file can no longer ask for more memory than the computer has: a large picture can have fewer layers, sixteen at the largest size</li>
+          <li>A paste stretched while turned and then set upright lands where it shows, and a line of text too long for any canvas still lands</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.0.0" date="2026-09-27">
       <description>
         <p>Tempera 2 paints in layers, and draws them with the graphics card.</p>

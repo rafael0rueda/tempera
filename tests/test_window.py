@@ -52,6 +52,19 @@ def test_undo_waits_while_a_stroke_is_under_way(window):
     assert pixel_at(window.canvas.document.surface, 0, 0) == (255, 255, 255, 255)
 
 
+def test_copying_and_saving_wait_while_a_grip_is_held(window):
+    canvas = window.canvas
+    canvas.begin_paste(new_surface(4, 4, RED), 2, 2)
+    paste = canvas._paste
+    canvas._drag_origin = (0.0, 0.0)
+    for name in ("copy", "save", "save-as", "export-as"):
+        window.activate_action("win." + name, None)
+    # Each of them would have landed it under the drag.
+    assert canvas._paste is paste
+    canvas._drag_origin = None
+    canvas.cancel_floating()
+
+
 def test_switching_tools_waits_while_a_stroke_is_under_way(window):
     window.canvas._drag_origin = (0.0, 0.0)
     window.lookup_action("tool").change_state(GLib.Variant.new_string("brush"))

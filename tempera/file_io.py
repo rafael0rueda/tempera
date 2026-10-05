@@ -144,6 +144,8 @@ def _read_layers(file: Gio.File) -> list[Layer]:
         raise image_error(str(error)) from None
     except OSError as error:
         raise image_error(error.strerror or str(error)) from None
+    except MemoryError:
+        raise image_error(_("There is not enough memory to open the image")) from None
     return layers
 
 
@@ -334,13 +336,13 @@ def encode_image(picture, image_format: str, quality: int) -> GLib.Bytes:
 def save_document(document: Document, file: Gio.File, quality: int = 90) -> None:
     """Save now, in this thread. The window uses save_document_async instead."""
     picture, image_format = image_to_save(document, file)
-    depth = document.save_point()
+    document.save_point()
     data = encode_image(picture, image_format, quality)
     # Encoded in memory first, then swapped in whole: writing straight to the
     # file would truncate the original before an encoder or a full disk failed.
     file.replace_contents(data.get_data(), None, False, Gio.FileCreateFlags.NONE, None)
     document.file = file
-    document.mark_saved(depth)
+    document.mark_saved()
 
 
 def load_surface_async(
@@ -395,7 +397,8 @@ def save_document_async(
     except GLib.Error as error:
         on_error(error.message)
         return
-    depth = document.save_point()
+    if not copy:
+        document.save_point()
 
     def on_written(source, result):
         try:
@@ -405,7 +408,7 @@ def save_document_async(
             return
         if not copy:
             document.file = file
-            document.mark_saved(depth)
+            document.mark_saved()
         on_saved()
 
     def done(result):

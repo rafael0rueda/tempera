@@ -30,6 +30,7 @@ from ..tools import (
     ToolContext,
     create_tools,
 )
+from .drags import Drag
 from .floating import FloatingMixin, FloatingPaste
 from .pointer import HANDLE_MARGIN, HANDLE_RING, HANDLE_SIZE, PointerMixin
 from .render import RenderMixin
@@ -98,22 +99,17 @@ class Canvas(
         self._shape_button = Gdk.BUTTON_PRIMARY
         # The timer that keeps the airbrush spraying while it is held still.
         self._repeat_source = 0
-        self._resize_handle: str | None = None
-        # A grip on a pending shape, or the shape itself, is being dragged.
-        self._shape_adjusting = False
+        # What the held button is doing, and how far the pointer has gone
+        # since it was pressed, in screen pixels.
+        self._drag: Drag | None = None
+        self._drag_offset = (0.0, 0.0)
         self._pan_origin: tuple[float, float] | None = None
         self._pinch_zoom = 1.0
         self._resize_size: tuple[int, int] | None = None
         self._paste: FloatingPaste | None = None
-        self._paste_origin: tuple[float, float] | None = None
-        self._paste_resize_handle: str | None = None
-        self._paste_resize_origin: tuple[float, float, float, float] | None = None
-        # A grip that turns, skews, or stretches a turned paste, taken hold of:
-        # (what it does, the grip, where the pointer was, the paste as it was).
-        self._paste_grab: tuple | None = None
+        # A paste that arrived in the middle of a drag, to float once it ends.
+        self._waiting_paste: tuple | None = None
         self._text: TextBox | None = None
-        self._text_origin: tuple[float, float] | None = None
-        self._text_moved = False
         self._selection: Selection | None = None
         self._caret_visible = True
         self._blink_source = 0
@@ -122,6 +118,9 @@ class Canvas(
         # A slow press, such as a fill, still at work off the UI thread, and
         # where the button was let go if that happened first.
         self._working = False
+        # Set while the window reads the file that will replace this picture:
+        # anything drawn meanwhile would be thrown away with it.
+        self.frozen = False
         self._pending_release: tuple[float, float] | None = None
 
         # Anchored top-left like the image itself; CanvasFrame does the centering.
@@ -134,6 +133,7 @@ class Canvas(
         drag.connect("drag-begin", self._on_drag_begin)
         drag.connect("drag-update", self._on_drag_update)
         drag.connect("drag-end", self._on_drag_end)
+        drag.connect("cancel", self._on_drag_cancel)
         # Lets CanvasFrame re-centre an image that a drag resized.
         drag.connect_after("drag-end", lambda *_args: self.queue_resize())
         self.add_controller(drag)
@@ -249,8 +249,11 @@ class Canvas(
 
     @property
     def is_dragging(self) -> bool:
-        """Whether a stroke, move or resize is under way: a button is held, or a fill still at work."""
-        return self._drag_origin is not None or self._working
+        """Whether a stroke, move or resize is under way: a button is held, or a fill still at work.
+
+        A picture about to be replaced counts too: it is not to be touched either.
+        """
+        return self._drag_origin is not None or self._working or self.frozen
 
     def select_layer(self, index: int) -> None:
         """Paint on another layer from now on, first landing what floats on the one it was placed on."""

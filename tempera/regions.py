@@ -7,20 +7,31 @@ wand picks out, and the pixels a transparent selection leaves out."""
 from __future__ import annotations
 
 from collections.abc import Iterator
+from functools import lru_cache
 
 import cairo
 from gi.repository import Gdk
 
 
 def premultiplied(color: Gdk.RGBA) -> tuple[int, int, int, int]:
-    """A colour as the bytes of one of cairo's ARGB32 pixels, in memory order."""
-    alpha = color.alpha
-    return (
-        round(color.blue * alpha * 255),
-        round(color.green * alpha * 255),
-        round(color.red * alpha * 255),
-        round(alpha * 255),
-    )
+    """A colour as the bytes of one of cairo's ARGB32 pixels, in memory order.
+
+    Asked of cairo itself, by painting one pixel: it rounds a colour mixed in
+    the editor or picked from the screen its own way, and a fill has to lay
+    down, and a transparent selection look for, the very bytes a brush does.
+    """
+    return _painted(color.red, color.green, color.blue, color.alpha)
+
+
+@lru_cache(maxsize=64)
+def _painted(red: float, green: float, blue: float, alpha: float) -> tuple[int, int, int, int]:
+    pixel = cairo.ImageSurface(cairo.FORMAT_ARGB32, 1, 1)
+    cr = cairo.Context(pixel)
+    cr.set_operator(cairo.OPERATOR_SOURCE)
+    cr.set_source_rgba(red, green, blue, alpha)
+    cr.paint()
+    pixel.flush()
+    return tuple(pixel.get_data()[:4])
 
 
 def row_masks(surface: cairo.ImageSurface, target: bytes, tolerance: int):
@@ -131,6 +142,21 @@ def spans_mask(
     return (left, top, right - left, bottom - top), mask
 
 
+def of_color(surface: cairo.ImageSurface, color: Gdk.RGBA) -> cairo.ImageSurface:
+    """An A8 mask of a surface's pixels of exactly one colour: 255 for each, 0 elsewhere."""
+    width, height = surface.get_width(), surface.get_height()
+    surface.flush()
+    row_mask = row_masks(surface, bytes(premultiplied(color)), 0)
+    mask = cairo.ImageSurface(cairo.FORMAT_A8, width, height)
+    mask.flush()
+    data, stride = mask.get_data(), mask.get_stride()
+    full = bytes([0, 255]) + bytes(254)
+    for y in range(height):
+        data[y * stride:y * stride + width] = bytes(row_mask(y)).translate(full)
+    mask.mark_dirty()
+    return mask
+
+
 def without_color(surface: cairo.ImageSurface, color: Gdk.RGBA) -> cairo.ImageSurface:
     """A copy of a surface with every pixel of exactly one colour made see-through."""
     width, height = surface.get_width(), surface.get_height()
@@ -139,17 +165,6 @@ def without_color(surface: cairo.ImageSurface, color: Gdk.RGBA) -> cairo.ImageSu
     cr.set_operator(cairo.OPERATOR_SOURCE)
     cr.set_source_surface(surface, 0, 0)
     cr.paint()
-    copy.flush()
-    row_mask = row_masks(copy, bytes(premultiplied(color)), 0)
-    # 255 keeps a pixel, 0 clears it.
-    keep = cairo.ImageSurface(cairo.FORMAT_A8, width, height)
-    keep.flush()
-    data, stride = keep.get_data(), keep.get_stride()
-    flip = bytes(255 if value == 0 else 0 for value in range(256))
-    for y in range(height):
-        data[y * stride:y * stride + width] = bytes(row_mask(y)).translate(flip)
-    keep.mark_dirty()
-    cr.set_operator(cairo.OPERATOR_DEST_IN)
-    cr.set_source_surface(keep, 0, 0)
-    cr.paint()
+    cr.set_operator(cairo.OPERATOR_DEST_OUT)
+    cr.mask_surface(of_color(surface, color), 0, 0)
     return copy
