@@ -30,6 +30,7 @@ from ..tools import (
     ToolContext,
     create_tools,
 )
+from .drags import Drag
 from .floating import FloatingMixin, FloatingPaste
 from .pointer import HANDLE_MARGIN, HANDLE_RING, HANDLE_SIZE, PointerMixin
 from .render import RenderMixin
@@ -98,22 +99,17 @@ class Canvas(
         self._shape_button = Gdk.BUTTON_PRIMARY
         # The timer that keeps the airbrush spraying while it is held still.
         self._repeat_source = 0
-        self._resize_handle: str | None = None
-        # A grip on a pending shape, or the shape itself, is being dragged.
-        self._shape_adjusting = False
+        # What the held button is doing, and how far the pointer has gone
+        # since it was pressed, in screen pixels.
+        self._drag: Drag | None = None
+        self._drag_offset = (0.0, 0.0)
         self._pan_origin: tuple[float, float] | None = None
         self._pinch_zoom = 1.0
         self._resize_size: tuple[int, int] | None = None
         self._paste: FloatingPaste | None = None
-        self._paste_origin: tuple[float, float] | None = None
-        self._paste_resize_handle: str | None = None
-        self._paste_resize_origin: tuple[float, float, float, float] | None = None
-        # A grip that turns, skews, or stretches a turned paste, taken hold of:
-        # (what it does, the grip, where the pointer was, the paste as it was).
-        self._paste_grab: tuple | None = None
+        # A paste that arrived in the middle of a drag, to float once it ends.
+        self._waiting_paste: tuple | None = None
         self._text: TextBox | None = None
-        self._text_origin: tuple[float, float] | None = None
-        self._text_moved = False
         self._selection: Selection | None = None
         self._caret_visible = True
         self._blink_source = 0
@@ -137,6 +133,7 @@ class Canvas(
         drag.connect("drag-begin", self._on_drag_begin)
         drag.connect("drag-update", self._on_drag_update)
         drag.connect("drag-end", self._on_drag_end)
+        drag.connect("cancel", self._on_drag_cancel)
         # Lets CanvasFrame re-centre an image that a drag resized.
         drag.connect_after("drag-end", lambda *_args: self.queue_resize())
         self.add_controller(drag)

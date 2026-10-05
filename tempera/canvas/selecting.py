@@ -104,7 +104,7 @@ class SelectionMixin:
         selection = self._selection
         surface = selection.pixels(self._document.surface)
         self.set_selection(None)
-        self.begin_paste(
+        self._float(
             surface,
             selection.x,
             selection.y,

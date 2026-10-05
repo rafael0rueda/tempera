@@ -12,7 +12,7 @@ import cairo
 from gi.repository import Gdk, Gio, GLib
 
 from ..clipboard import surface_from_texture
-from ..document import MAX_SIZE
+from ..document import MAX_SIZE, crop_surface
 from ..file_io import load_surface_async
 from ..i18n import _
 from ..interface_size import scaled
@@ -254,15 +254,18 @@ class FloatingPaste:
         width, height = grabbed.box_size
         u, v = grabbed.to_box(*point)
         left, top, right, bottom = 0.0, 0.0, width, height
+        # Upright, it stops at the top and left of the canvas, which only
+        # grows right and down; turned, what goes past them is cut off on landing.
+        least_u, least_v = (-math.inf, -math.inf) if grabbed.transformed else (-grabbed.x, -grabbed.y)
         if "w" in handle:
-            left = min(u, right - 1)
+            left = max(min(u, right - 1), right - MAX_SIZE, least_u)
         elif "e" in handle:
-            right = max(u, left + 1)
+            right = min(max(u, left + 1), left + MAX_SIZE)
         if "n" in handle:
-            top = min(v, bottom - 1)
+            top = max(min(v, bottom - 1), bottom - MAX_SIZE, least_v)
         elif "s" in handle:
-            bottom = max(v, top + 1)
-        new_width, new_height = min(right - left, MAX_SIZE), min(bottom - top, MAX_SIZE)
+            bottom = min(max(v, top + 1), top + MAX_SIZE)
+        new_width, new_height = right - left, bottom - top
         cx, cy = grabbed.to_image((left + right) / 2, (top + bottom) / 2)
         self.scale_x = new_width / self.surface.get_width()
         self.scale_y = new_height / self.surface.get_height()
@@ -288,7 +291,13 @@ class FloatingPaste:
     def landing(self) -> tuple[cairo.ImageSurface, int, int]:
         """The pixels as they will land, and where their top-left corner goes."""
         if not self.transformed:
-            return self.rendered(), round(self.x), round(self.y)
+            pixels, x, y = self.rendered(), round(self.x), round(self.y)
+            if x < 0 or y < 0:
+                # Stretched while turned and then set upright again, it can
+                # reach past the top-left, where it is cut off like any other.
+                width, height = pixels.get_width() + min(x, 0), pixels.get_height() + min(y, 0)
+                pixels = crop_surface(pixels, max(0, -x), max(0, -y), max(1, width), max(1, height))
+            return pixels, max(0, x), max(0, y)
         left, top, width, height = self.bounds()
         # What lies above or left of the canvas is lost: it only grows right and down.
         x0, y0 = max(0, math.floor(left)), max(0, math.floor(top))
@@ -336,6 +345,10 @@ class FloatingMixin:
 
     def _nudge_paste(self, delta: tuple[float, float]) -> None:
         self._paste.move_to(self._paste.x + delta[0], self._paste.y + delta[1])
+        self._paste_changed()
+
+    def _paste_changed(self) -> None:
+        """Show a floating paste where and how it now is."""
         self._sync_content_size()
         self.queue_draw()
         self.emit("floating-changed")
@@ -423,7 +436,23 @@ class FloatingMixin:
         source: tuple[int, int, int, int] | None = None,
         source_mask: cairo.ImageSurface | None = None,
     ) -> None:
-        """Float an image over the canvas until it is committed or discarded."""
+        """Float an image over the canvas until it is committed or discarded.
+
+        One that arrives while a button is held, as a paste read from the
+        clipboard or a dropped file can, waits for the drag to end: landing
+        in the middle of a stroke would cut the stroke in two.
+        """
+        if self._drag_origin is not None or self._working:
+            self._waiting_paste = (surface, x, y, source, source_mask)
+            return
+        self._float(surface, x, y, source, source_mask)
+
+    def _float_waiting_paste(self) -> None:
+        if self._waiting_paste is not None and not self._working:
+            waiting, self._waiting_paste = self._waiting_paste, None
+            self._float(*waiting)
+
+    def _float(self, surface, x, y, source, source_mask) -> None:
         self.commit_floating()
         # Whatever was selected is not what is about to hover over the canvas.
         self.set_selection(None)
@@ -538,8 +567,6 @@ class FloatingMixin:
         return True
 
     def _end_typing(self) -> None:
-        self._text_origin = None
-        self._text_moved = False
         self._stop_blink()
         self._im.focus_out()
         self._im.reset()
@@ -589,8 +616,9 @@ class FloatingMixin:
         self._refresh_text()
 
     def _on_key_pressed(self, controller, keyval, keycode, state) -> bool:
-        if self._working or self.frozen:
-            # A fill is still painting; Delete or a nudge would paint under it.
+        if self.is_dragging:
+            # A button is held, or a fill is still painting: Esc or Delete now
+            # would take away what the drag holds, or paint under the fill.
             return False
         if self._text is not None:
             return self._on_text_key(keyval, state)

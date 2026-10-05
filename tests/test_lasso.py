@@ -8,6 +8,7 @@ import pytest
 from gi.repository import Gdk
 
 from tempera.canvas import Canvas
+from tempera.canvas.drags import PasteMove
 from tempera.color import ColorState
 from tempera.document import Document, new_surface
 from tempera.selection import Selection
@@ -195,7 +196,7 @@ def test_moving_it_carries_the_inside_and_leaves_the_rest():
 
     gesture = FakeGesture()
     canvas._on_drag_begin(gesture, 25, 50)  # inside, clear of the grips
-    assert canvas._paste is not None and canvas._paste_resize_handle is None
+    assert canvas._paste is not None and isinstance(canvas._drag, PasteMove)
     canvas._on_drag_update(gesture, 5, 0)
     canvas._on_drag_end(gesture, 5, 0)
     canvas.commit_paste()

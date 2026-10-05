@@ -8,6 +8,8 @@ from dataclasses import dataclass
 import cairo
 from gi.repository import Gdk, Pango, PangoCairo
 
+from .document import MAX_SIZE
+
 DEFAULT_FONT = "Sans 24"
 # What the size slider offers for text: small enough for a caption, large enough
 # for a title across the canvas.
@@ -308,6 +310,9 @@ class TextBox:
         # Whatever would fall above or left of the canvas is lost: it only
         # grows right and down.
         left, top = max(left, -x), max(top, -y)
+        # Nor can it reach past the largest canvas, and a line long enough
+        # would be wider than any surface can be.
+        right, bottom = min(right, MAX_SIZE - x), min(bottom, MAX_SIZE - y)
         if right <= left or bottom <= top:
             return None
         surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, right - left, bottom - top)

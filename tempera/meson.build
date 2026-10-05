@@ -34,6 +34,7 @@ python.install_sources(
 python.install_sources(
   files(
     'canvas/__init__.py',
+    'canvas/drags.py',
     'canvas/floating.py',
     'canvas/frame.py',
     'canvas/pointer.py',

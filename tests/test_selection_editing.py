@@ -1,6 +1,8 @@
 # SPDX-FileCopyrightText: 2026 Rafael Rueda
 # SPDX-License-Identifier: GPL-3.0-or-later
 
+from dataclasses import replace
+
 from gi.repository import Gdk
 
 from tempera.canvas import CUT_OFF_MESSAGE, Canvas, FloatingPaste
@@ -104,40 +106,42 @@ def test_rendered_resamples_to_the_scaled_size():
     assert pixel_at(rendered, 3, 3) == (255, 255, 255, 255)
 
 
-# Canvas._paste_resized
+# Stretching an upright paste by one of its grips
 
 
-def _resized(canvas, handle, origin, x, y):
-    canvas._paste_resize_handle = handle
-    canvas._paste_resize_origin = origin
-    return canvas._paste_resized(x, y)
+def _resized(handle, origin, x, y):
+    """The box (x, y, width, height) of an upright paste after dragging one grip to a point."""
+    paste = FloatingPaste(new_surface(origin[2], origin[3], RED), x=origin[0], y=origin[1])
+    paste.resize_from(replace(paste), handle, (x, y))
+    return paste.x, paste.y, *paste.box_size
 
 
 def test_paste_resized_se_drags_the_bottom_right_corner():
-    canvas = make_canvas()
-    assert _resized(canvas, "se", (2, 3, 10, 10), 8, 5) == (2, 3, 6, 2)
+    assert _resized("se", (2, 3, 10, 10), 8, 5) == (2, 3, 6, 2)
 
 
 def test_paste_resized_nw_drags_the_top_left_corner():
-    canvas = make_canvas()
-    assert _resized(canvas, "nw", (2, 3, 10, 10), 1, 1) == (1, 1, 11, 12)
+    assert _resized("nw", (2, 3, 10, 10), 1, 1) == (1, 1, 11, 12)
 
 
 def test_paste_resized_clamps_to_zero_at_the_top_left():
-    canvas = make_canvas()
-    assert _resized(canvas, "nw", (2, 3, 10, 10), -5, -5) == (0.0, 0.0, 12.0, 13.0)
+    assert _resized("nw", (2, 3, 10, 10), -5, -5) == (0.0, 0.0, 12.0, 13.0)
 
 
 def test_paste_resized_e_only_changes_width():
-    canvas = make_canvas()
-    assert _resized(canvas, "e", (2, 3, 10, 10), 20, 999) == (2, 3, 18, 10)
+    assert _resized("e", (2, 3, 10, 10), 20, 999) == (2, 3, 18, 10)
 
 
 def test_paste_resized_never_collapses_to_zero_or_negative():
-    canvas = make_canvas()
-    x, y, width, height = _resized(canvas, "se", (2, 3, 10, 10), -100, -100)
+    x, y, width, height = _resized("se", (2, 3, 10, 10), -100, -100)
     assert width >= 1
     assert height >= 1
+
+
+def test_paste_resized_stops_at_the_largest_canvas():
+    x, y, width, height = _resized("se", (2, 3, 10, 10), 20000, 20000)
+    assert (x, y) == (2, 3)
+    assert (width, height) == (MAX_SIZE, MAX_SIZE)
 
 
 # _handle_at picking the closest handle, not the first one in range
