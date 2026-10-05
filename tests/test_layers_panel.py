@@ -13,6 +13,7 @@ from tempera.file_io import save_as_name, with_default_extension
 from tempera.window import TemperaWindow
 from tempera.window.layers_panel import LayerDrag
 
+from driving import drag, wait_until
 from pixels import paint_pixel, pixel_at
 
 RED = (1.0, 0.0, 0.0, 1.0)
@@ -216,19 +217,120 @@ def test_the_panel_is_remembered(window, application):
         other.destroy()
 
 
-def test_saving_a_picture_with_layers_flat_says_so_once(window, tmp_path):
+def answer(window, monkeypatch, response):
+    """Have the next dialog the window presents answered at once, and say what it asked."""
+    asked = []
+
+    def present(dialog, _parent):
+        asked.append(dialog.get_heading())
+        dialog.emit("response", response)
+
+    monkeypatch.setattr(Adw.AlertDialog, "present", present)
+    return asked
+
+
+def test_saving_a_picture_with_layers_flat_asks_first_and_only_once(window, tmp_path, monkeypatch):
     document = window.canvas.document
     document.add_layer()
+    document.file = Gio.File.new_for_path(str(tmp_path / "flat.png"))
+    asked = answer(window, monkeypatch, "flat")
+    for _time in range(2):
+        window.activate_action("win.save", None)
+        assert wait_until(lambda: not window._busy)
+    assert asked == ["Save Without Layers?"]
+    assert (tmp_path / "flat.png").is_file()
+    # The layers are still there to work on.
+    assert len(document.layers) == 2 and not document.modified
+
+
+def test_declining_to_save_flat_writes_nothing(window, tmp_path, monkeypatch):
+    document = window.canvas.document
+    document.add_layer()
+    document.file = Gio.File.new_for_path(str(tmp_path / "flat.png"))
+    answer(window, monkeypatch, "cancel")
+    window.activate_action("win.save", None)
+    assert not window._busy and not (tmp_path / "flat.png").exists()
+    assert document.modified
+
+
+def test_keeping_the_layers_instead_asks_for_an_openraster_file(window, tmp_path, monkeypatch):
+    document = window.canvas.document
+    document.add_layer()
+    document.file = Gio.File.new_for_path(str(tmp_path / "flat.png"))
+    answer(window, monkeypatch, "openraster")
+    asked = []
+    monkeypatch.setattr(window, "_save_as", lambda then=None, keep_layers=False: asked.append(keep_layers))
+    window.activate_action("win.save", None)
+    assert asked == [True]
+    assert not (tmp_path / "flat.png").exists()
+
+
+def test_a_picture_with_one_layer_saves_flat_without_a_question(window, tmp_path, monkeypatch):
+    document = window.canvas.document
+    document.file = Gio.File.new_for_path(str(tmp_path / "one.png"))
+    document.begin_change()
+    paint_pixel(document.surface, 0, 0, RED)
+    document.commit_change()
+    asked = answer(window, monkeypatch, "cancel")
+    window.activate_action("win.save", None)
+    assert wait_until(lambda: not window._busy)
+    assert asked == [] and (tmp_path / "one.png").is_file()
+
+
+# Knowing which layer is being painted on
+
+
+def test_the_status_bar_names_the_layer_once_there_are_two(window):
+    assert not window._layer_label.get_visible()
+    act(window, "add-layer")
+    assert window._layer_label.get_visible()
+    assert window._layer_label.get_label() == window.canvas.document.layer.name
+    window.canvas.document.set_layer_visible(1, False)
+    assert "hidden" in window._layer_label.get_label()
+
+
+def test_painting_on_a_hidden_layer_is_refused_and_said(window):
+    document = window.canvas.document
+    act(window, "add-layer")
+    document.set_layer_visible(1, False)
+    steps = len(document._undo)
     toasts = []
     window.toasts.add_toast = toasts.append
-    for _time in range(2):
-        window._write_now(Gio.File.new_for_path(str(tmp_path / "flat.png")), None, None)
-        context = GLib.MainContext.default()
-        while window._busy:
-            context.iteration(True)
-    assert "merged" in toasts[0].get_title()
-    assert toasts[0].get_action_name() == "win.save-as"
-    assert "merged" not in toasts[1].get_title()
+    drag(window.canvas, (5, 5), (20, 20))
+    assert len(document._undo) == steps
+    assert pixel_at(document.surface, 10, 10)[3] == 0
+    assert len(toasts) == 1 and toasts[0].get_action_name() == "win.show-layer"
+
+    # The button on the toast shows the layer, and painting then works.
+    act(window, "show-layer")
+    assert document.layer.shows
+    drag(window.canvas, (5, 5), (20, 20))
+    assert pixel_at(document.surface, 10, 10)[3] == 255
+
+
+def test_a_layer_faded_to_nothing_counts_as_hidden_and_showing_it_brings_it_back(window):
+    document = window.canvas.document
+    act(window, "add-layer")
+    document.set_layer_opacity(1, 0.0)
+    toasts = []
+    window.toasts.add_toast = toasts.append
+    window.canvas.begin_paste(new_surface(4, 4, RED), 2, 2)
+    assert not window.canvas.has_floating and len(toasts) == 1
+    window.canvas.begin_text(5, 5, window.colors.primary)
+    assert not window.canvas.is_typing
+    act(window, "show-layer")
+    assert document.layer.opacity == 1.0
+
+
+def test_copying_says_which_layer_was_copied(window, monkeypatch):
+    toasts = []
+    window.show_toast = toasts.append
+    monkeypatch.setattr(window, "_put_on_clipboard", lambda surface: None)
+    act(window, "copy")
+    act(window, "add-layer")
+    act(window, "copy")
+    assert toasts[0] == "Copied to clipboard"
+    assert window.canvas.document.layer.name in toasts[1]
 
 
 def test_save_as_suggests_openraster_for_a_picture_with_layers():

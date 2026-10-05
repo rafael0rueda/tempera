@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+import weakref
+
 from gi.repository import Adw, Gio, GLib, Gtk
 
 from .. import printing
@@ -20,6 +22,7 @@ from ..file_io import (
     save_document_async,
     with_default_extension,
 )
+from ..openraster import BLENDING, GROUPS, OVERHANG
 from ..recent_files import clear_recent, forget_recent, load_recent, remember_recent
 from ..settings import load_setting, save_settings
 
@@ -69,12 +72,13 @@ class FilesMixin:
                 file = source.open_finish(result)
             except GLib.Error:
                 return
-            self._open_file(file, _("Could not open image: {message}"))
+            self._open_file(file)
 
         dialog.open(self, None, on_done)
 
-    def _open_file(self, file: Gio.File, error_format: str, on_error=None) -> None:
+    def _open_file(self, file: Gio.File, on_error=None) -> None:
         """Read an image in the background and show it, or say why it could not be."""
+        heading = _("Could Not Open “{name}”").format(name=file.get_basename())
         self._set_busy(True)
         # Left alone until the file is read: what is drawn while waiting would
         # go with the picture it replaces.
@@ -85,11 +89,12 @@ class FilesMixin:
             self.canvas.frozen = False
             self._set_document(document)
             self._remember_recent(file)
+            self._say_what_was_lost(document)
 
         def on_error_message(message: str) -> None:
             self._set_busy(False)
             self.canvas.frozen = False
-            self.show_toast(error_format.format(message=message))
+            self.show_failure(heading, message)
             if on_error is not None:
                 on_error()
 
@@ -130,13 +135,26 @@ class FilesMixin:
                 forget_recent(uri)
                 self._refresh_recent_menu()
 
-            self._open_file(
-                file,
-                _("Could not open “{name}”: {{message}}").format(name=file.get_basename()),
-                forget,
-            )
+            self._open_file(file, forget)
 
         self._confirm_discard(proceed)
+
+    def _say_what_was_lost(self, document: Document) -> None:
+        """Say that a file from another program holds more than Tempera shows."""
+        if not document.lost:
+            return
+        names = {
+            BLENDING: _("how its layers blend"),
+            GROUPS: _("its groups of layers"),
+            OVERHANG: _("what lies beyond the edge of the canvas"),
+        }
+        parts = [names[each] for each in document.lost if each in names]
+        self.show_toast(
+            # Translators: {parts} is a list such as "how its layers blend, its groups of layers".
+            _("Opened without {parts}; saving asks for a new name, to keep the original").format(
+                parts=", ".join(parts)
+            )
+        )
 
     def _save(self, then=None) -> None:
         if self._busy:
@@ -144,13 +162,14 @@ class FilesMixin:
         # What gets written should match what is on screen.
         self.canvas.commit_floating()
         document = self.canvas.document
-        if document.file is None or format_for(document.file) is None:
+        if document.file is None or format_for(document.file) is None or document.lost:
             # Never saved, or opened from a format such as GIF that Tempera
-            # cannot write back: ask where, rather than overwrite it as PNG.
+            # cannot write back, or from a file holding more than Tempera
+            # shows: ask where, rather than overwrite it.
             self._save_as(then)
             return
         # Ctrl+S keeps the quality already chosen; only Save As asks for it.
-        self._write_now(document.file, then, self._last_jpeg_quality)
+        self._write(document.file, then, self._last_jpeg_quality)
 
     def _print(self) -> None:
         # What gets printed should match what is on screen.
@@ -173,12 +192,15 @@ class FilesMixin:
             picture, load_setting("print-size", printing.DEFAULT_SIZE), on_print
         ).present(self)
 
-    def _save_as(self, then=None) -> None:
+    def _save_as(self, then=None, keep_layers: bool = False) -> None:
+        """Ask where to save. To `keep_layers`, only the OpenRaster files are shown."""
         if self._busy:
             return
         self.canvas.commit_floating()
         document = self.canvas.document
-        dialog = Gtk.FileDialog(title=_("Save Image"), filters=image_filters())
+        dialog = Gtk.FileDialog(
+            title=_("Save Image"), filters=image_filters(layered_only=keep_layers)
+        )
         layered = len(document.layers) > 1
         dialog.set_initial_name(save_as_name(document.file, layered))
 
@@ -230,7 +252,7 @@ class FilesMixin:
         """Where Export As starts: where this picture was last exported to, or else
         beside its own file, named after it."""
         last = self._last_export
-        if last is not None and last[0] is document:
+        if last is not None and last[0]() is document:
             return last[1].get_parent(), last[1].get_basename()
         folder = document.file.get_parent() if document.file is not None else None
         return folder, export_name(document.file)
@@ -247,12 +269,15 @@ class FilesMixin:
 
         def on_exported() -> None:
             self._set_busy(False)
-            self._last_export = (document, file)
+            # Only for as long as the picture is open: it is not kept alive for this.
+            self._last_export = (weakref.ref(document), file)
             self.show_toast(_("Exported {name}").format(name=file.get_basename()))
 
         def on_error(message: str) -> None:
             self._set_busy(False)
-            self.show_toast(_("Could not export image: {message}").format(message=message))
+            self.show_failure(
+                _("Could Not Export “{name}”").format(name=file.get_basename()), message
+            )
 
         arguments = {} if quality is None else {"quality": quality}
         save_document_async(document, file, on_exported, on_error, copy=True, **arguments)
@@ -275,11 +300,45 @@ class FilesMixin:
         dialog.connect("response", on_response)
         dialog.present(self)
 
-    def _write(self, file: Gio.File, then=None) -> None:
-        if format_for(file) == "jpeg":
+    def _write(self, file: Gio.File, then=None, quality: int | None = None) -> None:
+        """Save to a file, first asking what has to be asked: whether to go without
+        the layers, and, unless a `quality` is given, how good a JPEG to make."""
+        document = self.canvas.document
+        flat = len(document.layers) > 1 and format_for(file) != LAYERED_FORMAT
+        agreed = self._flat_agreed is not None and self._flat_agreed() is document
+        if flat and not agreed:
+            self._confirm_flat(file, lambda: self._write(file, then, quality), then)
+        elif format_for(file) == "jpeg" and quality is None:
             self._prompt_jpeg_quality(lambda quality: self._write_now(file, then, quality))
         else:
-            self._write_now(file, then, None)
+            self._write_now(file, then, quality)
+
+    def _confirm_flat(self, file: Gio.File, proceed, then) -> None:
+        """Ask before a picture's layers are left out of its file: once for each picture."""
+        document = self.canvas.document
+        dialog = Adw.AlertDialog(
+            heading=_("Save Without Layers?"),
+            body=_(
+                "“{name}” cannot hold layers: it will get the picture as it shows, "
+                "all {count} layers merged into one. An OpenRaster file keeps them."
+            ).format(name=file.get_basename(), count=len(document.layers)),
+        )
+        dialog.add_response("cancel", _("Cancel"))
+        dialog.add_response("openraster", _("Save as OpenRaster…"))
+        dialog.add_response("flat", _("Save Flattened"))
+        dialog.set_response_appearance("openraster", Adw.ResponseAppearance.SUGGESTED)
+        dialog.set_default_response("openraster")
+        dialog.set_close_response("cancel")
+
+        def on_response(_dialog, response: str) -> None:
+            if response == "flat":
+                self._flat_agreed = weakref.ref(document)
+                proceed()
+            elif response == "openraster":
+                self._save_as(then, keep_layers=True)
+
+        dialog.connect("response", on_response)
+        dialog.present(self)
 
     def _prompt_jpeg_quality(self, on_accept, accept_label: str | None = None) -> None:
         scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 1, 100, 1)
@@ -310,31 +369,23 @@ class FilesMixin:
     def _write_now(self, file: Gio.File, then, quality: int | None) -> None:
         self._set_busy(True)
         document = self.canvas.document
-        merged = len(document.layers) > 1 and format_for(file) != LAYERED_FORMAT
 
         def on_saved() -> None:
             self._set_busy(False)
-            if merged and self._told_of_merging is not document:
-                # Once for each picture: the layers are still there to work
-                # on, but the file has them merged into one.
-                self._told_of_merging = document
-                self.toasts.add_toast(
-                    Adw.Toast(
-                        title=_("Saved {name} with its layers merged").format(name=file.get_basename()),
-                        use_markup=False,
-                        button_label=_("Keep Layers…"),
-                        action_name="win.save-as",
-                    )
-                )
-            else:
-                self.show_toast(_("Saved {name}").format(name=file.get_basename()))
+            # The file is Tempera's own now, with nothing in it Tempera cannot keep.
+            document.lost = ()
+            self.show_toast(_("Saved {name}").format(name=file.get_basename()))
             self._remember_recent(file)
             if then is not None:
                 then()
 
         def on_error(message: str) -> None:
             self._set_busy(False)
-            self.show_toast(_("Could not save image: {message}").format(message=message))
+            self.show_failure(
+                _("Could Not Save “{name}”").format(name=file.get_basename()),
+                message,
+                save_as=True,
+            )
 
         arguments = {} if quality is None else {"quality": quality}
         save_document_async(self.canvas.document, file, on_saved, on_error, **arguments)

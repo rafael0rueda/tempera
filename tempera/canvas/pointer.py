@@ -265,6 +265,12 @@ class PointerMixin:
         if handle is not None:
             return CanvasResize(self, handle)
 
+        if self.active_tool.mutates and not self._document.layer.shows:
+            # Paint that cannot be seen going on is a surprise later, when the
+            # layer is shown again: say so instead, and paint nothing.
+            self.emit("layer-hidden")
+            return Drag(self)
+
         if not self.active_tool.in_progress:
             self._shape_button = gesture.get_current_button()
         self._drag_context = self._make_context(self._shape_button)

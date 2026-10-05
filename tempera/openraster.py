@@ -40,6 +40,10 @@ MAX_LAYER_BYTES = 512 * 1024 * 1024
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
 
+# What a file from another program can hold that Tempera cannot.
+BLENDING, GROUPS, OVERHANG = "blending", "groups", "overhang"
+
+
 class OpenRasterError(Exception):
     """A file that is not OpenRaster, or not one Tempera can open."""
 
@@ -141,17 +145,25 @@ def _number(value: str | None, fallback: float, kind=float):
 
 
 def _layers_in(
-    element, x: int, y: int, opacity: float, visible: bool, found: list, limit: int
+    element, x: int, y: int, opacity: float, visible: bool, found: list, limit: int, lost: list
 ) -> None:
     """Every layer inside a stack, top first, with the offsets, opacity and visibility
-    of the stacks around it carried down."""
+    of the stacks around it carried down.
+
+    What Tempera has no place for is named in `lost`: how a layer blends with
+    those beneath it, other than lying over them, and layers kept in groups.
+    """
     for child in element:
+        if child.get("composite-op", "svg:src-over") != "svg:src-over" and BLENDING not in lost:
+            lost.append(BLENDING)
+        if child.tag == "stack" and GROUPS not in lost:
+            lost.append(GROUPS)
         child_x = x + _number(child.get("x"), 0, int)
         child_y = y + _number(child.get("y"), 0, int)
         child_opacity = opacity * max(0.0, min(_number(child.get("opacity"), 1.0), 1.0))
         child_visible = visible and child.get("visibility", "visible") != "hidden"
         if child.tag == "stack":
-            _layers_in(child, child_x, child_y, child_opacity, child_visible, found, limit)
+            _layers_in(child, child_x, child_y, child_opacity, child_visible, found, limit, lost)
         elif child.tag == "layer" and child.get("src"):
             found.append((child, child_x, child_y, child_opacity, child_visible))
         if len(found) > limit:
@@ -176,8 +188,14 @@ def _decode_png(data: bytes, name: str) -> cairo.ImageSurface:
         raise OpenRasterError(str(error)) from None
 
 
-def read_openraster(stream) -> tuple[int, int, list[Layer]]:
-    """The canvas size and the layers, bottom first, of an OpenRaster file."""
+def read_openraster(stream, lost: list[str] | None = None) -> tuple[int, int, list[Layer]]:
+    """The canvas size and the layers, bottom first, of an OpenRaster file.
+
+    A file from GIMP or Krita can hold what Tempera has no place for; each
+    such thing found is named in `lost`, when a list is given for it:
+    BLENDING, GROUPS, or OVERHANG for pixels beyond the edge of the canvas.
+    """
+    lost = [] if lost is None else lost
     try:
         archive = zipfile.ZipFile(stream)
     except (zipfile.BadZipFile, OSError, EOFError):
@@ -195,7 +213,7 @@ def read_openraster(stream) -> tuple[int, int, list[Layer]]:
         # memory, however small its PNG.
         limit = layer_limit(width, height)
         for stack in image.findall("stack"):
-            _layers_in(stack, 0, 0, 1.0, True, found, limit)
+            _layers_in(stack, 0, 0, 1.0, True, found, limit, lost)
         if not found:
             raise OpenRasterError(_("The file has no layers"))
 
@@ -204,6 +222,11 @@ def read_openraster(stream) -> tuple[int, int, list[Layer]]:
             source = element.get("src")
             pixels = _decode_png(_read_member(archive, source, MAX_LAYER_BYTES), source)
             # Each layer covers the whole canvas here, wherever it sat in the file.
+            reaches_past = (
+                x < 0 or y < 0 or x + pixels.get_width() > width or y + pixels.get_height() > height
+            )
+            if reaches_past and OVERHANG not in lost:
+                lost.append(OVERHANG)
             try:
                 surface = new_surface(width, height, TRANSPARENT)
                 cr = cairo.Context(surface)

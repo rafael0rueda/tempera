@@ -207,6 +207,15 @@ class Layer:
         self.visible = visible
         self.opacity = opacity
 
+    @property
+    def shows(self) -> bool:
+        """Whether anything painted on it can be seen: not hidden, nor faded to nothing."""
+        return self.visible and self.opacity > 0
+
+    def copy(self) -> Layer:
+        """The same layer with pixels of its own, which later painting does not reach."""
+        return Layer(copy_surface(self.surface), self.name, self.visible, self.opacity)
+
 
 @dataclass(frozen=True)
 class LayerState:
@@ -354,6 +363,9 @@ class Document(GObject.Object):
         # The top layer, as for an image opened with several.
         self.current = len(self.layers) - 1
         self.file = None
+        # What its file holds that Tempera has no place for, such as how the
+        # layers blend: saving over the file would lose it for good.
+        self.lost: tuple[str, ...] = ()
         self._undo: list[Patch | StackChange] = []
         self._redo: list[Patch | StackChange] = []
         # How many undo steps deep the saved image sits, so undoing back to it

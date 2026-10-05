@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from gi.repository import Gdk, GLib, Gtk
+from gi.repository import Gdk, GLib, Gtk, Pango
 
 from .. import interface_size
 from ..canvas import CanvasFrame
@@ -121,6 +121,11 @@ class LayoutMixin:
             label.add_css_class("numeric")
             label.add_css_class("dim-label")
             bar.append(label)
+
+        # Which layer the tools paint on, when the picture has more than one.
+        self._layer_label = Gtk.Label(visible=False, ellipsize=Pango.EllipsizeMode.END, max_width_chars=24)
+        self._layer_label.add_css_class("dim-label")
+        bar.append(self._layer_label)
 
         # The size is also the header's subtitle, which renders too small to
         # read at larger interface font sizes; here it also opens Canvas Size.

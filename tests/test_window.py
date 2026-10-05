@@ -295,7 +295,7 @@ def test_opening_an_image_reads_it_in_the_background(window, tmp_path):
     pixbuf.fill(0xFFFFFFFF)
     pixbuf.savev(str(path), "png", [], [])
 
-    window._open_file(Gio.File.new_for_path(str(path)), "no: {message}")
+    window._open_file(Gio.File.new_for_path(str(path)))
     assert window._busy
 
     assert wait_until(lambda: not window._busy)
@@ -307,13 +307,16 @@ def test_an_image_that_cannot_be_read_says_so_and_keeps_the_old_one(window, tmp_
     path = tmp_path / "broken.png"
     path.write_text("not a picture")
     before = window.canvas.document
-    forgotten = []
+    forgotten, failures = [], []
+    window.show_failure = lambda heading, message, **_more: failures.append(heading)
 
-    window._open_file(Gio.File.new_for_path(str(path)), "no: {message}", lambda: forgotten.append(True))
+    window._open_file(Gio.File.new_for_path(str(path)), lambda: forgotten.append(True))
 
     assert wait_until(lambda: not window._busy)
     assert window.canvas.document is before
     assert forgotten
+    # In a dialog, which stays until it is read, and names the file.
+    assert failures == ["Could Not Open “broken.png”"]
 
 
 def test_save_asks_where_for_an_image_it_cannot_write_back(window, tmp_path, monkeypatch):
@@ -407,7 +410,7 @@ def test_an_image_larger_than_the_window_opens_zoomed_out(application, window, t
     pixbuf.fill(0xFFFFFFFF)
     pixbuf.savev(str(path), "png", [], [])
 
-    window._open_file(Gio.File.new_for_path(str(path)), "no: {message}")
+    window._open_file(Gio.File.new_for_path(str(path)))
     assert wait_until(lambda: not window._busy)
     settle()
 
@@ -423,7 +426,7 @@ def test_a_small_image_opens_at_full_size(window, tmp_path):
     pixbuf.fill(0xFFFFFFFF)
     pixbuf.savev(str(path), "png", [], [])
 
-    window._open_file(Gio.File.new_for_path(str(path)), "no: {message}")
+    window._open_file(Gio.File.new_for_path(str(path)))
     assert wait_until(lambda: not window._busy)
     settle()
 

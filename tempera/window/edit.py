@@ -43,7 +43,15 @@ class EditMixin:
         # A selection narrows the copy down to itself; otherwise it is the canvas.
         selection = self.canvas.selection_surface()
         self._put_on_clipboard(selection or self.canvas.document.surface)
-        self.show_toast(_("Copied the selection") if selection else _("Copied to clipboard"))
+        document = self.canvas.document
+        if selection:
+            message = _("Copied the selection")
+        elif len(document.layers) > 1:
+            # Only what is on this layer, which the picture as it shows may not be.
+            message = _("Copied the layer “{name}”").format(name=document.layer.name)
+        else:
+            message = _("Copied to clipboard")
+        self.show_toast(message)
 
     def _cut(self) -> None:
         self.canvas.commit_floating()

@@ -56,6 +56,8 @@ class Canvas(
         "pointer-left": (GObject.SignalFlags.RUN_FIRST, None, ()),
         # Something worth telling the user, such as a drop that could not be read.
         "message": (GObject.SignalFlags.RUN_FIRST, None, (str,)),
+        # A press that would have painted on a layer that does not show.
+        "layer-hidden": (GObject.SignalFlags.RUN_FIRST, None, ()),
     }
 
     def __init__(self, document: Document, colors: ColorState):

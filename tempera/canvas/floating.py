@@ -476,6 +476,10 @@ class FloatingMixin:
         if self._drag_origin is not None or self._working:
             self._waiting_paste = (surface, x, y, source, source_mask)
             return
+        if not self._document.layer.shows:
+            # It would land where it cannot be seen.
+            self.emit("layer-hidden")
+            return
         self._float(surface, x, y, source, source_mask)
 
     def _float_waiting_paste(self) -> None:
@@ -567,6 +571,10 @@ class FloatingMixin:
 
         `background` fills the box behind the text, when the style asks for one.
         """
+        if not self._document.layer.shows:
+            # It would be typed where it cannot be seen.
+            self.emit("layer-hidden")
+            return
         self.commit_floating()
         self._text = TextBox(x, y, color, self.font, self.text_style, background)
         self.grab_focus()

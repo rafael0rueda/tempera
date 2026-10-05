@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+import weakref
+
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 
 from .. import APP_NAME, interface_size, recovery, shortcuts
@@ -87,6 +89,7 @@ class TemperaWindow(
         self.canvas.connect("pointer-moved", self._on_pointer_moved)
         self.canvas.connect("pointer-left", lambda *_args: self._cursor_label.set_label(""))
         self.canvas.connect("message", lambda _canvas, message: self.show_toast(message))
+        self.canvas.connect("layer-hidden", lambda _canvas: self._say_layer_hidden())
         self._closing = False
         # A copy of unsaved work in Tempera's data folder, so a crash does not
         # lose it. Counting changes tells whether the last copy is out of date.
@@ -94,6 +97,7 @@ class TemperaWindow(
         self._changes = 0
         self._kept_changes: int | None = None
         self._recovery_failed = False
+        self._hidden_toast: Adw.Toast | None = None
         self._recovery_timer = GLib.timeout_add_seconds(
             recovery.INTERVAL, self._keep_recovery_copy
         )
@@ -105,9 +109,10 @@ class TemperaWindow(
         self._syncing_size = False
         self._last_jpeg_quality = 90
         # The picture already told that saving it as PNG or JPEG merges its layers.
-        self._told_of_merging: Document | None = None
+        # The picture whose layers the user agreed to save merged, if still open.
+        self._flat_agreed: weakref.ref | None = None
         # The picture last exported, and where to, for the next export to start from.
-        self._last_export: tuple[Document, Gio.File] | None = None
+        self._last_export: tuple[weakref.ref, Gio.File] | None = None
 
         self._title = Adw.WindowTitle(title=APP_NAME)
         self.toasts = Adw.ToastOverlay()
@@ -405,6 +410,25 @@ class TemperaWindow(
         """Show the current keys after the user changes a shortcut."""
         for widget, text, action in self._shortcut_tooltips:
             widget.set_tooltip_text(shortcuts.tooltip(text, action))
+
+    def show_failure(self, heading: str, message: str, save_as: bool = False) -> None:
+        """Say that something the user asked for could not be done, and why.
+
+        A dialog rather than a toast: a save that failed must not slip by
+        unread. After one, `save_as` offers to try somewhere else.
+        """
+        dialog = Adw.AlertDialog(heading=heading, body=message)
+        dialog.add_response("close", _("Close"))
+        dialog.set_close_response("close")
+        dialog.set_default_response("close")
+        if save_as:
+            dialog.add_response("save-as", _("Save As…"))
+            dialog.set_response_appearance("save-as", Adw.ResponseAppearance.SUGGESTED)
+            dialog.set_default_response("save-as")
+            dialog.connect(
+                "response", lambda _dialog, response: response == "save-as" and self._save_as()
+            )
+        dialog.present(self)
 
     def show_toast(self, message: str) -> None:
         # Messages carry file names and loader errors, which are not markup.

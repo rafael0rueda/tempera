@@ -137,8 +137,8 @@ class TemperaApplication(Adw.Application):
         self._offer_recovery(window)
         if error_message is not None:
             print(f"tempera: could not open image: {error_message}", file=sys.stderr)
-            window.show_toast(
-                _("Could not open image: {message}").format(message=error_message)
+            window.show_failure(
+                _("Could Not Open “{name}”").format(name=files[0].get_basename()), error_message
             )
 
     def _offer_recovery(self, window: TemperaWindow) -> None:
