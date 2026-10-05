@@ -174,6 +174,7 @@ SHORTCUT_GROUPS: list[tuple[str, list[Shortcut]]] = [
         [
             Shortcut("win.preferences", _("Preferences"), ("<Control>comma",)),
             Shortcut("win.shortcuts", _("Keyboard Shortcuts"), ("<Control>question",)),
+            Shortcut("app.help", _("Help"), ("F1",)),
             Shortcut("window.close", _("Close Window"), ("<Control>w",)),
             Shortcut("app.quit", _("Quit"), ("<Control>q",)),
         ],
@@ -378,7 +379,7 @@ CANVAS, TEXT, FIELD, DIALOG = range(4)
 # being typed, not the picture behind it.
 EDITING_ACTIONS = {"win.undo", "win.redo", "win.select-all", "win.cut", "win.copy", "win.paste"}
 # What still works with a dialog open over the picture.
-DIALOG_ACTIONS = {"app.quit"}
+DIALOG_ACTIONS = {"app.quit", "app.help"}
 
 
 def keys_claimed_in(window: Gtk.Window) -> int:

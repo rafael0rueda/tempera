@@ -78,6 +78,7 @@ class HeaderMixin:
         app_section = Gio.Menu()
         app_section.append(_("Preferences"), "win.preferences")
         app_section.append(_("Keyboard Shortcuts"), "win.shortcuts")
+        app_section.append(_("Help"), "app.help")
         app_section.append(_("About {app}").format(app=APP_NAME), "app.about")
         app_section.append(_("Quit"), "app.quit")
         menu.append_section(None, app_section)

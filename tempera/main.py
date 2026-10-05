@@ -26,6 +26,8 @@ from .window import TemperaWindow  # noqa: E402
 
 WEBSITE = "https://github.com/rafael0rueda/tempera"
 ISSUES = WEBSITE + "/issues"
+# The guide as it was for this version, not as it has become since.
+GUIDE = f"{WEBSITE}/blob/v{VERSION}/USER_GUIDE.md"
 
 
 def metainfo_path(directory: Path | None = None) -> Path | None:
@@ -109,7 +111,11 @@ class TemperaApplication(Adw.Application):
         self._load_resources()
         interface_size.apply(interface_size.parse(load_setting("interface-size")))
 
-        for name, callback in (("quit", self._on_quit), ("about", self._on_about)):
+        for name, callback in (
+            ("quit", self._on_quit),
+            ("about", self._on_about),
+            ("help", self._on_help),
+        ):
             action = Gio.SimpleAction.new(name, None)
             action.connect("activate", callback)
             self.add_action(action)
@@ -223,6 +229,10 @@ class TemperaApplication(Adw.Application):
             self.quit()
         for window in windows:
             window.close()
+
+    def _on_help(self, *_args):
+        """Open the user guide for this version, in the browser."""
+        Gtk.UriLauncher.new(GUIDE).launch(self.props.active_window, None, None)
 
     def _on_about(self, *_args):
         about = Adw.AboutDialog(

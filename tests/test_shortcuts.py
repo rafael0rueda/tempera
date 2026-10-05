@@ -184,3 +184,10 @@ def test_every_shape_has_its_own_key():
 def test_a_shape_key_changed_in_tempera_1_0_carries_over(settings_file):
     settings_file.write_text("[shortcuts]\nwin.tool::rectangle = <Shift>r\n", encoding="utf-8")
     assert shortcuts.keys_for("win.shape::rectangle") == ["<Shift>r"]
+
+
+def test_help_opens_the_guide_for_this_version():
+    from tempera import VERSION, main
+
+    assert shortcuts.keys_for("app.help") == ["F1"]
+    assert main.GUIDE.endswith(f"/blob/v{VERSION}/USER_GUIDE.md")

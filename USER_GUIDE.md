@@ -87,7 +87,8 @@ put right before it becomes pixels:
 shape lands it, as does saving, and so does drawing somewhere else: the drag that starts
 the next shape lands the one waiting. However it lands, it is a single step to undo.
 
-Three rows of buttons after **Outline** and **Fill** set how a shape is drawn:
+**Style**, after **Outline** and **Fill**, opens three rows of buttons that set how a
+shape is drawn:
 
 - **Solid**, **Dashed** or **Dotted** outline. The dashes are three line widths long
   with gaps of two, and the dots one width across, so a thick line has big dashes and a
@@ -122,11 +123,14 @@ the tools that paint.
 | Print                       | `Ctrl+P`                                         |
 | Canvas size                 | `Ctrl+E`                                         |
 | Resize image                | `Ctrl+R`                                         |
+| Rotate right / left         | `Ctrl+Alt+R` / `Ctrl+Shift+R`                    |
 | Select all                  | `Ctrl+A`                                         |
 | Cut / Copy / Paste          | `Ctrl+X` / `Ctrl+C` / `Ctrl+V`                   |
 | Nudge a selection or paste  | Arrow keys (`Shift` for 10 px)                   |
-| Land / discard a paste      | `Enter` / `Esc`                                  |
-| Drop / clear a selection    | `Esc` / `Delete`                                 |
+| Land / put back a paste     | `Enter` / `Esc`                                  |
+| Land / drop a shape         | `Enter` / `Esc`                                  |
+| Throw away what floats      | `Delete` or `Backspace`                          |
+| Drop / clear a selection    | `Esc` / `Delete` or `Backspace`                  |
 | Land / discard typed text   | `Ctrl+Enter` / `Esc`                             |
 | Undo / Redo                 | `Ctrl+Z` / `Ctrl+Shift+Z` (or `Ctrl+Y`)          |
 | Zoom in / out / 100%        | `Ctrl++` / `Ctrl+-` / `Ctrl+0`, or `Ctrl`+scroll |
@@ -139,20 +143,26 @@ the tools that paint.
 | Merge down / rename layer   | `Ctrl+M` / `F2`                                  |
 | Bold / italic / underline   | `Ctrl+B` / `Ctrl+I` / `Ctrl+U`                   |
 | Smaller / bigger brush      | `[` / `]`                                        |
+| Swap the two colours        | `X`                                              |
 | Preferences                 | `Ctrl+,`                                         |
 | Keyboard shortcuts          | `Ctrl+?`                                         |
-| Quit                        | `Ctrl+Q`                                         |
+| Help (this guide)           | `F1`                                             |
+| Close window / Quit         | `Ctrl+W` / `Ctrl+Q`                              |
 
 ### Customising shortcuts
 
 The keys above are the defaults. **Keyboard Shortcuts** in the main menu (or `Ctrl+?`)
 lists every shortcut: click one and press the new key, `Backspace` to remove it, or `Esc`
 to leave it as it was. A key another action already uses can be moved over after a
-confirmation. Crop, rotate and flip, deleting a layer or flattening the image, the outline
-styles and the text alignments have no key by default but can be given one. Keys the
-canvas needs — arrows, `Enter`, `Esc`, `Delete`, `Tab` — are listed but cannot be
-reassigned. While a field takes typed text, such as a layer's name or a colour's hex
-value, the keys without `Ctrl` stand aside, so typing an `s` types it. Changes are saved in `~/.config/tempera/settings.ini`; only keys that differ
+confirmation. Crop and flip, deleting a layer or flattening the image, picking a colour
+from the screen, the outline styles and the text alignments have no key by default but
+can be given one. Keys the canvas needs — arrows, `Enter`, `Esc`, `Delete` and
+`Backspace` — are listed but cannot be reassigned, and nor can `Tab`. While a field
+takes typed text, such as a layer's name or a colour's hex value, the keys without
+`Ctrl` stand aside, so typing an `s` types it, and so do the keys that edit: there
+`Ctrl+Z`, `Ctrl+A`, `Ctrl+C`, `Ctrl+X` and `Ctrl+V` work on what is being typed, not on
+the picture. While a dialog is open no shortcut reaches the picture behind it. The keys
+for bold, italic and underline work only with the text tool in hand. Changes are saved in `~/.config/tempera/settings.ini`; only keys that differ
 from the defaults are stored, and **Reset All Shortcuts** puts everything back.
 
 ## Colours
@@ -172,7 +182,7 @@ windows included: GNOME shows a crosshair, and the colour clicked comes back, ke
 the opacity already set. **Pick from Screen** on the colour picker's bar does the same
 straight into the primary colour.
 
-**Custom Colours** in the editor keeps colours for later: `+` keeps the colour now,
+**Custom Colors** in the editor keeps colours for later: `+` keeps the colour now,
 clicking a kept one takes it up, and a right-click, or `Delete`, lets it go. Sixteen can
 be kept, the newest first, and they are remembered.
 
@@ -191,9 +201,14 @@ menu or `Ctrl+L` shows them in a panel on the right, the top layer first, each w
 small picture of it. A new picture has one layer, **Background**.
 
 The tools paint on the layer picked out in the list, which a click on another row
-changes; `Alt+]` and `Alt+[` pick the layer above or below. The fill and the magic wand
-look at that layer only, while the colour picker takes the colour that shows, whatever
-layer it is on.
+changes; `Alt+]` and `Alt+[` pick the layer above or below. Once a picture has more
+than one layer, the status bar names the one being painted on, panel open or not. The
+fill and the magic wand look at that layer only, as do Copy and Cut, while the colour
+picker takes the colour that shows, whatever layer it is on.
+
+A layer that is hidden, or faded to nothing, cannot be painted, pasted or typed on:
+paint that cannot be seen going on is a surprise later. A message says so, with a
+**Show Layer** button that brings the layer back.
 
 - The eye beside a layer hides it or shows it again.
 - **Opacity**, under the list, makes the layer in hand see-through; however far it is
@@ -217,6 +232,9 @@ layer and see-through on the ones above it, so the layers beneath show through.
 The panel stays open or closed as you left it, and opens by itself for a picture that
 has more than one layer.
 
+A picture can have up to 100 layers, fewer when it is very large, since every layer is
+a whole canvas of memory: 89 at 4000 × 3000 pixels, 16 at the largest size.
+
 ## Opening and saving
 
 Images open in any format GdkPixbuf reads (PNG, JPEG, BMP, TIFF, WebP, GIF, ICO…), and
@@ -232,16 +250,23 @@ that can no longer be opened is taken off the list when you pick it.
 Saving writes OpenRaster, PNG, JPEG, BMP, TIFF, WebP or ICO, picked by the file
 extension. Only OpenRaster keeps the layers, with their names, order, opacity and
 whether they show; GIMP, Krita and MyPaint open it too. The other formats get the picture
-as it shows, every visible layer merged, and the first time a picture with layers is
-saved that way a message says so, with a button to save the layers after all. Save As
+as it shows, every visible layer merged, so the first time a picture with layers is
+saved that way Tempera asks: **Save Flattened** goes ahead, and does not ask again for
+that picture, while **Save as OpenRaster…** keeps the layers in a file of their own.
+The layers stay in the window to work on either way. Save As
 suggests an `.ora` name for a picture with more than one layer. A name typed without one
 of those extensions gets `.png` added, or `.ora` for a picture with layers — Tempera asks
 first if that would replace an existing file. **Save As** to a JPEG asks for a quality from 1 to 100; `Ctrl+S`
-afterwards keeps that choice without asking again, for as long as the window is open.
+afterwards keeps that choice without asking again, and it is remembered for next time.
 An image opened from a format Tempera cannot write, such as GIF, is never overwritten:
-`Ctrl+S` asks where to save it, suggesting the same name as a PNG. The image is
+`Ctrl+S` asks where to save it, suggesting the same name as a PNG. The same goes for an
+OpenRaster file from GIMP or Krita that holds what Tempera has no place for — layers
+that blend in other ways than lying one over another, groups of layers, or pixels
+beyond the edge of the canvas. Tempera says what it left out when the file opens, and
+the first save asks for a new name, so the original keeps what it had. The image is
 written in full before it replaces the old file, so a save that fails, on a full disk
-say, leaves the original untouched. BMP and JPEG have no transparency, so transparent
+say, leaves the original untouched; a save, an open or an export that fails says why in
+a dialog that stays until it is read. BMP and JPEG have no transparency, so transparent
 areas are saved as white; ICO files are limited to 256 × 256 pixels.
 
 Closing a window, opening another image or starting a new one asks first when there are
@@ -251,7 +276,8 @@ that has unsaved changes.
 
 The title shows `•` while there are unsaved changes, and undoing back to the image as
 it was last saved clears it again. Undo keeps up to 50 steps. Each step holds only the
-part of the picture that edit changed, so brush strokes on a large photo cost little; a
+parts of the picture that edit changed, so brush strokes on a large photo cost little,
+a long one from corner to corner included; a
 step that changes the whole picture, such as a fill or a rotation, holds all of it, and
 the history gives up its oldest steps rather than use more than 1 GB. Changes to the
 layers themselves — hiding one, moving it, renaming it — cost next to nothing.
@@ -298,12 +324,14 @@ only on screen and never saved into the image.
 
 The window size, the tool and shape in hand, the brush and text sizes, the font and the
 text's style, the fill and magic wand tolerances, the airbrush density, whether shapes
-get an outline and a fill and how they are drawn, whether selections are transparent,
+get an outline and a fill and how they are drawn, whether the eraser rubs back to
+nothing, whether selections are transparent,
 whether the pixel grid and the layers panel show, both colours with the ones painted
 with lately and the ones kept in the colour editor, the JPEG quality, where the palette
-sits and the interface size are all kept in `~/.config/tempera/settings.ini` and put back the next
+sits, the size and background last asked for a new image and the interface size are all kept in `~/.config/tempera/settings.ini` and put back the next
 time, along with how to fit a print. The printer and paper last printed on are kept in
-`~/.config/tempera/print-settings.ini`. A **New image** can start transparent instead of white.
+`~/.config/tempera/print-settings.ini`. A **New Image** can start transparent instead of
+white, and then stays see-through wherever the canvas later grows or is emptied.
 
 ## Crash recovery
 
@@ -336,8 +364,9 @@ Drag one of the three grips on the right, bottom and bottom-right edge of the im
 resize it by hand; the dashed outline and the size readout in the status bar follow the
 pointer, and the change is applied when you let go. For an exact size, click that
 readout or use **Canvas Size…** (`Ctrl+E`) in the main menu. Either way the image keeps
-its top-left corner — growing the canvas adds white to the bottom layer and nothing to
-the ones above, shrinking it crops every layer — and the resize can be undone with
+its top-left corner — growing the canvas adds white to the bottom layer (or nothing, in a
+picture started transparent) and nothing to the ones above, shrinking it crops every
+layer — and the resize can be undone with
 `Ctrl+Z`.
 
 While the select tool has a selection, its own eight handles take the place of these
@@ -369,7 +398,12 @@ dashed outline marks it out. Dragging from inside that outline lifts those pixel
 carries them somewhere else — hold `Ctrl` as you start the drag to leave a copy behind
 instead of moving them. The pixels float exactly like a paste does, so `Enter` or a
 click outside lands them, `Esc` or `Ctrl+Z` puts them back, and moving them past the
-right or bottom edge grows the canvas. A move leaves white behind on the bottom layer —
+right or bottom edge grows the canvas. While they float they are the selection, as in
+Paint: `Ctrl+C` copies them and leaves them floating, `Ctrl+X` or `Delete` takes them
+out of the picture for good, and **Crop to Selection** lands them and crops to them.
+Landed with `Enter` they stay selected, ready to be picked up again; a click outside
+lets go of them. Picked up and put straight back, nothing has changed and there is
+nothing to undo. A move leaves white behind on the bottom layer —
 the colour the canvas is made of, not whichever colour you happen to be painting with —
 and a see-through gap on a layer above it, and the whole move, the gap and the pixels in
 their new place, is a single `Ctrl+Z`.
@@ -401,8 +435,9 @@ pixels.
 **Transparent**, in the bar while a selection tool is in hand, leaves the secondary
 colour out of whatever is moved or pasted, as in Paint, where it is the background
 colour: a shape cut from a white background drops onto something else without a white
-box around it. The button wears the colour it leaves out, and turning it on, or picking
-another secondary colour, while something floats shows the change at once.
+box around it. What is left out stays where it was when the rest moves. The button
+wears the colour it leaves out, and turning it on, or picking another secondary colour,
+while something floats shows the change at once.
 
 `Ctrl+A` selects the whole image and switches to the select tool, and **Crop to
 Selection** in the main menu cuts the canvas down to just the selected rectangle.
@@ -453,7 +488,8 @@ box land whole.
 
 The text stays editable until it lands. `Enter` starts a new line, the arrow keys,
 `Home`, `End`, `Backspace` and `Delete` work as usual, and clicking inside the box puts
-the caret where you clicked. Dragging the box moves it. Nothing is written into the
+the caret where you clicked. `Ctrl+V` puts text from the clipboard in at the caret.
+Dragging the box moves it. Nothing is written into the
 image until you press `Ctrl+Enter`, click outside the box, or switch to another tool;
 `Esc` or `Ctrl+Z` throws it away instead.
 
@@ -469,8 +505,10 @@ gives the same pixels.
 
 ## Keyboard and screen readers
 
-Every tool, menu item and file action has a keyboard shortcut, and `Tab` moves through
-the tool options, the tools, the palette and the status bar. The colour swatches are buttons: `Tab` to
+Every tool and file action, and nearly every menu item, has a keyboard shortcut, and the
+rest can be given one; `Tab` moves through the tool options, the tools, the palette and
+the status bar. Clicking a button or a slider leaves the keyboard with the canvas, so
+`Enter` still lands the shape whose fill was just switched on. The colour swatches are buttons: `Tab` to
 one and press `Enter` or `Space` to make it the primary colour, then `X` to swap the
 primary and secondary colours around. With a pointer, right-clicking a swatch sets the
 secondary colour directly.

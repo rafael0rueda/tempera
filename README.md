@@ -44,7 +44,7 @@ not have it yet. Installing a newer bundle the same way updates it.
 
 ## Requirements
 
-Fedora Workstation 40 or newer:
+Fedora Workstation 43 or newer (Tempera needs libadwaita 1.8):
 
 ```
 sudo dnf install python3-gobject python3-cairo gtk4 libadwaita
