@@ -482,9 +482,69 @@ def test_a_stroke_keeps_only_the_rectangle_it_touched():
     paint_pixel(document.surface, 10, 20, RED)
     paint_pixel(document.surface, 14, 22, RED)
     document.finish_change()
-    patch = document._undo[-1]
-    assert (patch.x, patch.y) == (10, 20)
-    assert (patch.pixels.get_width(), patch.pixels.get_height()) == (5, 3)
+    [(x, y, pixels)] = document._undo[-1].pieces
+    assert (x, y) == (10, 20)
+    assert (pixels.get_width(), pixels.get_height()) == (5, 3)
+
+
+def test_a_stroke_from_corner_to_corner_keeps_far_less_than_the_whole_picture():
+    document = Document(new_surface(2000, 1500, WHITE))
+    before = copy_surface(document.surface)
+    document.begin_change()
+    cr = cairo.Context(document.surface)
+    cr.set_source_rgb(1, 0, 0)
+    cr.set_line_width(4)
+    cr.move_to(0, 0)
+    cr.line_to(2000, 1500)
+    cr.stroke()
+    document.finish_change()
+    after = copy_surface(document.surface)
+
+    step = document._undo[-1]
+    whole = document_module.surface_bytes(document.surface)
+    # Each band keeps only the stretch of the stroke that crosses it.
+    assert len(step.pieces) == 3
+    assert step.nbytes < whole / 2.5
+    assert all(pixels.get_height() <= document_module.PATCH_TILE for _x, _y, pixels in step.pieces)
+    # Each stretch is told to the canvas to redraw.
+    assert len(document.damage) == len(step.pieces)
+    document.undo()
+    assert same_pixels(document.surface, before)
+    document.redo()
+    assert same_pixels(document.surface, after)
+
+
+def test_two_dabs_in_opposite_corners_keep_two_small_pieces():
+    document = Document(new_surface(3000, 2000, WHITE))
+    document.begin_change()
+    paint_pixel(document.surface, 1, 1, RED)
+    paint_pixel(document.surface, 2990, 1990, RED)
+    document.finish_change()
+    step = document._undo[-1]
+    assert sorted((x, y) for x, y, _pixels in step.pieces) == [(1, 1), (2990, 1990)]
+    assert step.nbytes <= 2 * 64
+    document.undo()
+    assert pixel_at(document.surface, 1, 1) == (255, 255, 255, 255)
+    assert pixel_at(document.surface, 2990, 1990) == (255, 255, 255, 255)
+
+
+def test_the_pieces_of_a_change_hold_exactly_the_pixels_that_differ():
+    rng = __import__("random").Random(3)
+    for _each in range(12):
+        width, height = rng.randint(600, 1300), rng.randint(600, 1300)
+        a = new_surface(width, height, WHITE)
+        b = copy_surface(a)
+        for _dab in range(rng.randint(1, 6)):
+            paint_pixel(b, rng.randrange(width), rng.randrange(height), RED)
+        pieces = document_module.changed_pieces(a, b)
+        # Put back piece by piece, nothing is left that differs.
+        cr = cairo.Context(b)
+        cr.set_operator(cairo.OPERATOR_SOURCE)
+        for x, y, w, h in pieces:
+            cr.set_source_surface(crop_surface(a, x, y, w, h), x, y)
+            cr.rectangle(x, y, w, h)
+            cr.fill()
+        assert same_pixels(a, b)
 
 
 def test_undo_and_redo_walk_through_mixed_edits():

@@ -10,6 +10,7 @@ from tempera.canvas import Canvas, pointer
 from tempera.color import ColorState
 from tempera.document import Document, new_surface
 from tempera.selection import Selection
+from tempera.tools.wand import WandTool
 from tempera.window import TemperaWindow
 
 from driving import FakeGesture
@@ -181,3 +182,66 @@ def test_the_wand_has_a_key():
     from tempera import shortcuts
 
     assert shortcuts.keys_for("win.tool::wand") == ["m"]
+
+
+# Only the edges in view are drawn: a pick on a photo can have a million
+
+
+def speckled_pick():
+    import random
+
+    rng = random.Random(5)
+    surface = new_surface(300, 400, WHITE)
+    for _each in range(900):
+        paint_pixel(surface, rng.randrange(300), rng.randrange(400), (0.0, 0.0, 0.0, 1.0))
+    return Selection.from_color(surface, 0, 0, 0)
+
+
+def covered(edges):
+    """Every unit step of some edges, so that cutting one in two changes nothing."""
+    steps = set()
+    for x1, y1, x2, y2 in edges:
+        if y1 == y2:
+            steps.update(("across", x, y1) for x in range(x1, x2))
+        else:
+            steps.update(("down", x1, y) for y in range(y1, y2))
+    return steps
+
+
+def test_the_edges_in_view_are_all_of_those_that_reach_into_it():
+    selection = speckled_pick()
+    assert len(selection.edges) > 1000
+    for view in ((0, 0, 300, 400), (40, 130, 90, 260), (250, 0, 300, 10), (0, 399, 300, 400)):
+        left, top, right, bottom = view
+        expected = {
+            step for step in covered(selection.edges)
+            if left <= step[1] <= right and top <= step[2] <= bottom
+        }
+        found = covered(selection.edges_within(*view))
+        # Nothing in view is missed, and little outside it is drawn.
+        assert expected <= found
+        assert len(found) <= len(covered(selection.edges))
+    whole = selection.edges_within(0, 0, 300, 400)
+    assert covered(whole) == covered(selection.edges)
+    assert len(selection.edges_within(40, 130, 90, 260)) < len(whole) / 4
+
+
+def test_a_view_off_the_selection_draws_nothing():
+    selection = Selection(10, 10, 20, 20)
+    assert selection.edges_within(100, 100, 200, 200) == []
+    assert len(selection.edges_within(0, 0, 50, 50)) == 4
+
+
+def test_the_wand_works_out_the_edges_before_it_hands_the_selection_over():
+    tool = WandTool()
+    surface = new_surface(40, 40, WHITE)
+    paint_pixel(surface, 20, 20, (0.0, 0.0, 0.0, 1.0))
+
+    class Context:
+        tolerance = 0
+        select_pixels = None
+
+    Context.surface = surface
+    tool.press(Context, 0, 0)
+    # Already there, so the first frame that draws them does not stall working them out.
+    assert "_edge_bands" in tool._found.__dict__

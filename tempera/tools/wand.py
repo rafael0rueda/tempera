@@ -31,6 +31,10 @@ class MagicWandTool(Tool):
 
     def press(self, ctx, x, y):
         self._found = Selection.from_color(ctx.surface, x, y, ctx.tolerance)
+        if self._found is not None:
+            # Its edges too, here off the UI thread: on a photo there can be
+            # a million of them, and the first frame would stall finding them.
+            self._found.prepare()
         self._searched = True
 
     def release(self, ctx, x, y):
