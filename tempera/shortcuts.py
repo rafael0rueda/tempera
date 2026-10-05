@@ -418,6 +418,9 @@ def apply_accels(application: Gtk.Application) -> None:
             keys = []
         elif claim == FIELD and action in EDITING_ACTIONS:
             keys = []
+        elif claim == TEXT and action == "win.select-all":
+            # Nothing to select in a text box, and landing the text would be a surprise.
+            keys = []
         elif claim != CANVAS:
             keys = [key for key in keys if not is_bare(key)]
         application.set_accels_for_action(action, keys)

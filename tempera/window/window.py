@@ -376,6 +376,9 @@ class TemperaWindow(
     def _on_floating_changed(self, *_args) -> None:
         self._sync_state()
         self._sync_typing_accels()
+        # Pixels that float can be cut; a text box being typed in takes pasted text.
+        self._sync_selection_actions()
+        self._sync_paste_action()
 
     def _sync_typing_accels(self) -> None:
         """Give the one-key shortcuts back and forth as a text box comes and goes."""

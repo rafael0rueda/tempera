@@ -56,6 +56,25 @@ def has_image(clipboard: Gdk.Clipboard) -> bool:
     )
 
 
+def has_text(clipboard: Gdk.Clipboard) -> bool:
+    """Whether the clipboard holds text, which a text box being typed in can take."""
+    return clipboard.get_formats().union_deserialize_gtypes().contain_gtype(GObject.TYPE_STRING)
+
+
+def read_text(clipboard: Gdk.Clipboard, on_text: Callable[[str], None]) -> None:
+    """Fetch the clipboard's text; nothing happens if it turns out to have none."""
+
+    def on_read(source, result):
+        try:
+            text = source.read_text_finish(result)
+        except (GLib.Error, TypeError):
+            return
+        if text:
+            on_text(text)
+
+    clipboard.read_text_async(None, on_read)
+
+
 def read_image(
     clipboard: Gdk.Clipboard,
     on_image: Callable[[cairo.ImageSurface], None],

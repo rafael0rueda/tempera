@@ -789,3 +789,52 @@ def test_closing_the_window_and_turning_clockwise_have_keys():
     assert shortcuts.keys_for("win.rotate-cw") == ["<Control><Alt>r"]
     assert shortcuts.keys_for("win.pick-from-screen") == []
     assert "win.pick-from-screen" in shortcuts.SHORTCUTS
+
+
+# Cut, Copy and Paste with something floating
+
+
+def test_cut_and_crop_are_offered_for_what_floats(window):
+    assert not window.lookup_action("cut").get_enabled()
+    window.canvas.begin_paste(new_surface(4, 4, RED), 2, 2)
+    assert window.lookup_action("cut").get_enabled()
+    assert window.lookup_action("crop").get_enabled()
+    window.canvas.cancel_floating()
+    assert not window.lookup_action("cut").get_enabled()
+
+
+def test_copy_leaves_what_floats_floating_and_cut_takes_it_away(window, monkeypatch):
+    copied = []
+    monkeypatch.setattr(window, "_put_on_clipboard", copied.append)
+    window.show_toast = lambda message: None
+    window.canvas.begin_paste(new_surface(4, 4, RED), 2, 2)
+    window.activate_action("win.copy", None)
+    assert window.canvas.has_floating_paste and len(copied) == 1
+    assert (copied[0].get_width(), copied[0].get_height()) == (4, 4)
+    window.activate_action("win.cut", None)
+    assert not window.canvas.has_floating_paste and len(copied) == 2
+    assert pixel_at(window.canvas.document.surface, 3, 3) == (255, 255, 255, 255)
+
+
+def test_text_on_the_clipboard_goes_into_the_text_box_being_typed_in(window, monkeypatch):
+    from tempera.window import edit
+
+    monkeypatch.setattr(edit, "has_text", lambda clipboard: True)
+    monkeypatch.setattr(edit, "has_image", lambda clipboard: False)
+    monkeypatch.setattr(edit, "read_text", lambda clipboard, on_text: on_text("pasted"))
+    window._sync_paste_action()
+    # Text is no use to the picture itself.
+    assert not window.lookup_action("paste").get_enabled()
+    window.lookup_action("tool").change_state(GLib.Variant.new_string("text"))
+    window.canvas.begin_text(10, 10, window.colors.primary)
+    assert window.lookup_action("paste").get_enabled()
+    window.activate_action("win.paste", None)
+    assert window.canvas._text.text == "pasted"
+    window.canvas.cancel_text()
+
+
+def test_select_all_does_not_land_text_being_typed(window, application):
+    window.canvas.begin_text(10, 10, window.colors.primary)
+    assert application.get_accels_for_action("win.select-all") == []
+    window.canvas.cancel_text()
+    assert application.get_accels_for_action("win.select-all") == ["<Control>a"]
