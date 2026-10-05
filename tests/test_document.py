@@ -573,3 +573,82 @@ def test_a_change_that_altered_nothing_touched_nothing():
     document.begin_change()
     document.commit_change()
     assert document.damage == []
+
+
+# What counts as saved, when the save takes a while
+
+
+def stroke(document, x=0, y=0, color=RED):
+    document.begin_change()
+    paint_pixel(document.surface, x, y, color)
+    document.commit_change()
+
+
+def test_a_stroke_finished_during_a_save_is_not_marked_saved_once_the_history_is_full():
+    document = Document(new_surface(4, 4, WHITE))
+    for _each in range(MAX_UNDO + 5):
+        stroke(document)
+    document.save_point()
+    # Drawn while the file was being written, pushing the oldest step out.
+    stroke(document, 1, 1)
+    document.mark_saved()
+    assert document.modified
+    document.undo()
+    assert not document.modified
+
+
+def test_a_stroke_after_an_undo_during_a_save_is_not_marked_saved():
+    document = Document(new_surface(4, 4, WHITE))
+    stroke(document)
+    stroke(document, 1, 1)
+    document.save_point()
+    document.undo()
+    stroke(document, 2, 2)
+    document.mark_saved()
+    assert document.modified
+    document.undo()
+    document.undo()
+    assert document.modified
+
+
+def test_a_save_with_nothing_drawn_since_marks_the_picture_saved():
+    document = Document(new_surface(4, 4, WHITE))
+    stroke(document)
+    document.save_point()
+    document.mark_saved()
+    assert not document.modified
+
+
+# Layers are whole canvases, so a large picture can have fewer
+
+
+def test_a_large_picture_can_have_fewer_layers(monkeypatch):
+    assert document_module.layer_limit(800, 600) == document_module.MAX_LAYERS
+    assert document_module.layer_limit(MAX_SIZE, MAX_SIZE) == 16
+    monkeypatch.setattr(document_module, "LAYER_BUDGET", 4 * 4 * 4 * 2)
+    document = Document(new_surface(4, 4, WHITE))
+    assert document.add_layer()
+    assert not document.add_layer()
+    assert not document.duplicate_layer()
+
+
+def test_a_picture_does_not_grow_past_what_its_layers_allow(monkeypatch):
+    document = Document(new_surface(4, 4, WHITE))
+    document.add_layer()
+    monkeypatch.setattr(document_module, "LAYER_BUDGET", 4 * 4 * 4 * 2)
+    assert not document.resize(8, 8)
+    assert not document.scale(8, 8)
+    assert (document.width, document.height) == (4, 4)
+    assert len(document._undo) == 1
+    # Smaller is always possible, and a paste that would grow it is cut off instead.
+    assert document.paste(new_surface(4, 4, RED), 2, 2)
+    assert (document.width, document.height) == (4, 4)
+    assert document.resize(2, 2)
+
+
+def test_a_layer_name_loses_what_a_file_cannot_carry():
+    document = Document(new_surface(4, 4, WHITE))
+    assert document.rename_layer(0, " Ink\x0b\x00 lines\x1f ")
+    assert document.layer.name == "Ink lines"
+    assert not document.rename_layer(0, "\x00\x0b")
+    assert document.layer.name == "Ink lines"

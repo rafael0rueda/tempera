@@ -15,7 +15,7 @@ from ..document import MAX_SIZE
 from ..interface_size import scaled
 from ..tools import WAND_TOOL_ID, ToolContext
 from ..tools.base import rect_handles
-from .floating import SIDE_GRIPS, TEXT_PADDING, rotate_grip
+from .floating import SIDE_GRIPS, TEXT_PADDING, rotate_grip, too_large_message
 
 # The resize grips, at the default interface size; they grow with it.
 HANDLE_SIZE = 10
@@ -263,7 +263,7 @@ class PointerMixin:
         if gesture.get_current_button() == Gdk.BUTTON_MIDDLE:
             # The middle button pans the view; it does not paint.
             return
-        if self._working:
+        if self._working or self.frozen:
             # The last fill is not done yet; this press would paint under it.
             return
         start_x, start_y = self._to_image(start_x, start_y)
@@ -510,7 +510,8 @@ class PointerMixin:
             self._resize_handle = None
             self._resize_size = None
             self._drag_origin = None
-            self._document.resize(width, height)
+            if not self._document.resize(width, height):
+                self.emit("message", too_large_message(len(self._document.layers)))
             self._sync_content_size()
             self.queue_draw()
             return

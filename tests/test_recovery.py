@@ -37,7 +37,7 @@ def save_and_wait(slot, image, info=None):
     """Keep a copy of a document, or of a picture as a document of one layer."""
     document = image if isinstance(image, Document) else Document(image)
     written = []
-    slot.save(document, info or {"title": "Test.png", "file": None}, lambda: written.append(True))
+    slot.save(document, info or {"title": "Test.png", "file": None}, lambda error: written.append(True))
     assert wait_for(lambda: written)
 
 
@@ -94,7 +94,7 @@ def test_clearing_and_closing_leave_nothing_behind(private_recovery_dir):
 def test_a_copy_cleared_while_being_written_is_removed_when_the_write_ends(private_recovery_dir):
     slot = recovery.RecoverySlot()
     written = []
-    slot.save(Document(new_surface(200, 200, RED)), {"title": "T"}, lambda: written.append(True))
+    slot.save(Document(new_surface(200, 200, RED)), {"title": "T"}, lambda error: written.append(True))
     slot.clear()
     assert wait_for(lambda: written)
     assert not slot.image_path.exists() and not slot.json_path.exists()
@@ -314,9 +314,10 @@ def test_recovering_into_a_blank_window_reopens_the_file_as_unsaved(application,
     assert document.modified
     assert document.file.get_uri() == "file:///tmp/cat.png"
     assert pixel_at(document.surface, 2, 2) == (255, 0, 0, 255)
-    # The old copy is gone, and the window keeps one of its own at once.
-    assert not leftover.image_path.exists()
+    # The window keeps a copy of its own at once, and only then is the old one gone.
+    assert leftover.image_path.exists()
     assert wait_for(lambda: kept(window))
+    assert wait_for(lambda: not leftover.image_path.exists())
 
 
 def test_a_window_already_in_use_is_left_alone(application, window):
@@ -359,3 +360,90 @@ def test_each_leftover_is_asked_about_in_turn(application, window):
     dialog.emit("response", "later")
     # One thrown away, one kept for next time.
     assert len(recovery.find_leftovers()) == 1
+
+
+# When a copy cannot be written
+
+
+def test_a_copy_that_fails_says_so_and_the_next_still_gets_written(private_recovery_dir, monkeypatch):
+    slot = recovery.RecoverySlot()
+    real = recovery.write_openraster
+
+    def broken(*_args, **_kwargs):
+        raise RuntimeError("out of memory")
+
+    monkeypatch.setattr(recovery, "write_openraster", broken)
+    heard = []
+    slot.save(Document(new_surface(3, 3, RED)), {"title": "T"}, heard.append)
+    assert wait_for(lambda: heard)
+    assert heard == ["out of memory"]
+    assert not slot.json_path.exists()
+
+    monkeypatch.setattr(recovery, "write_openraster", real)
+    slot.save(Document(new_surface(3, 3, RED)), {"title": "T"}, heard.append)
+    assert wait_for(lambda: len(heard) == 2)
+    assert heard[1] is None and slot.json_path.is_file()
+    slot.close()
+
+
+def test_a_full_disk_is_reported(private_recovery_dir, monkeypatch):
+    slot = recovery.RecoverySlot()
+
+    def full(*_args, **_kwargs):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(recovery, "write_openraster", full)
+    heard = []
+    slot.save(Document(new_surface(3, 3, RED)), {"title": "T"}, heard.append)
+    assert wait_for(lambda: heard)
+    assert heard == ["No space left on device"]
+    slot.close()
+
+
+def test_each_copy_asked_for_hears_back(private_recovery_dir):
+    slot = recovery.RecoverySlot()
+    heard = []
+    slot.save(Document(new_surface(200, 200, RED)), {"title": "T"}, lambda error: heard.append("first"))
+    slot.save(Document(new_surface(200, 200, RED)), {"title": "T"}, lambda error: heard.append("second"))
+    assert wait_for(lambda: len(heard) == 2)
+    assert heard == ["first", "second"]
+    slot.close()
+
+
+def test_the_window_says_once_that_copies_are_failing(window, monkeypatch):
+    def full(*_args, **_kwargs):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(recovery, "write_openraster", full)
+    toasts = []
+    window.show_toast = toasts.append
+    for _each in range(2):
+        draw(window)
+        window._keep_recovery_copy()
+        assert wait_for(lambda: not window._recovery._writing)
+    assert len(toasts) == 1 and "No space left on device" in toasts[0]
+
+
+def test_a_recovered_picture_whose_new_copy_fails_keeps_the_old_one(application, window, monkeypatch):
+    leftover = leftover_of(new_surface(5, 5, RED), {"title": "cat.png", "file": None})
+
+    def full(*_args, **_kwargs):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(recovery, "write_openraster", full)
+    window.show_toast = lambda message: None
+    application._recover(window, leftover)
+    assert wait_for(lambda: leftover.lock is None)
+    assert leftover.image_path.exists()
+
+
+def test_a_copy_that_cannot_be_read_at_all_is_left_for_next_time(application, window, monkeypatch):
+    leftover = leftover_of(new_surface(5, 5, RED), {"title": "cat.png", "file": None})
+    monkeypatch.setattr(
+        recovery.Leftover, "load", lambda self: (_ for _ in ()).throw(RuntimeError("damaged"))
+    )
+    toasts = []
+    window.show_toast = toasts.append
+    assert application._recover(window, leftover) is window
+    assert toasts and "damaged" in toasts[0]
+    assert leftover.image_path.exists()

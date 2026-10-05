@@ -8,7 +8,6 @@ import sys
 import xml.etree.ElementTree as ElementTree
 from pathlib import Path
 
-import cairo
 import gi
 
 gi.require_version("Gtk", "4.0")
@@ -19,7 +18,6 @@ from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 
 from . import APP_ID, APP_NAME, VERSION, interface_size, recovery  # noqa: E402
 from .file_io import load_document  # noqa: E402
-from .openraster import OpenRasterError  # noqa: E402
 from .i18n import _
 from .recent_files import remember_recent  # noqa: E402
 from .settings import load_setting, migrate_old_config  # noqa: E402
@@ -108,6 +106,10 @@ class TemperaApplication(Adw.Application):
         except GLib.Error as error:
             error_message = error.message
             document = None
+        except Exception as error:  # noqa: BLE001
+            # Still a window to show, with why the picture is not in it.
+            error_message = str(error) or type(error).__name__
+            document = None
         else:
             remember_recent(files[0])
         window = TemperaWindow(self, document)
@@ -163,8 +165,8 @@ class TemperaApplication(Adw.Application):
         """Open a recovered image, as unsaved changes to the file it came from."""
         try:
             document = leftover.load()
-        except (cairo.Error, MemoryError, OSError, OpenRasterError) as error:
-            # Kept for next time rather than lost.
+        except Exception as error:  # noqa: BLE001
+            # Kept for next time rather than lost, whatever is wrong with it.
             leftover.release()
             window.show_toast(
                 _("Could not recover “{title}”: {message}").format(
@@ -178,9 +180,16 @@ class TemperaApplication(Adw.Application):
         if not window.is_untouched():
             window = TemperaWindow(self)
             window.present()
-        window.show_recovered(document)
-        # The window has its own copy now.
-        leftover.discard()
+
+        def kept(error: str | None) -> None:
+            if error is None:
+                # The window has its own copy now.
+                leftover.discard()
+            else:
+                # Still the only copy there is: left for next time.
+                leftover.release()
+
+        window.show_recovered(document, kept)
         return window
 
     def _load_resources(self) -> None:

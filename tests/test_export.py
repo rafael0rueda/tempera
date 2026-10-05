@@ -135,3 +135,46 @@ def test_export_has_a_key_and_a_place_in_the_menu(window):
             if action is not None:
                 actions.add(action.get_string())
     assert "win.export-as" in actions
+
+
+# A file that cannot be read must not leave the window stuck
+
+
+def test_a_damaged_file_leaves_the_window_able_to_save(window, tmp_path, monkeypatch):
+    from tempera import file_io
+
+    def broken(_file):
+        raise RuntimeError("damaged beyond telling")
+
+    monkeypatch.setattr(file_io, "load_layers", broken)
+    toasts = []
+    window.show_toast = toasts.append
+    window._open_file(Gio.File.new_for_path(str(tmp_path / "bad.ora")), "Could not open: {message}")
+    assert window.canvas.frozen
+    wait_until_idle(window)
+    assert toasts == ["Could not open: damaged beyond telling"]
+    assert not window.canvas.frozen
+
+
+def test_the_picture_is_left_alone_while_another_is_read(window, tmp_path):
+    layered_ora(tmp_path)
+    old = window.canvas.document
+    window._open_file(Gio.File.new_for_path(str(tmp_path / "art.ora")), "{message}")
+    assert window.canvas.is_dragging
+    wait_until_idle(window)
+    assert not window.canvas.is_dragging
+    assert window.canvas.document is not old
+
+
+def test_a_stroke_finished_while_saving_stays_unsaved(window, tmp_path):
+    document = window.canvas.document
+    for _each in range(60):
+        document.begin_change()
+        paint_pixel(document.surface, 0, 0, RED)
+        document.commit_change()
+    window._write_now(Gio.File.new_for_path(str(tmp_path / "busy.png")), None, None)
+    document.begin_change()
+    paint_pixel(document.surface, 1, 1, RED)
+    document.commit_change()
+    wait_until_idle(window)
+    assert document.modified

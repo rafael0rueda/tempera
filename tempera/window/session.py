@@ -10,6 +10,7 @@ from gi.repository import Gdk, GLib
 from ..color import MAX_RECENT_COLORS, rgba
 from ..color_editor import MAX_CUSTOM_COLORS
 from ..document import Document
+from ..i18n import _
 from ..settings import load_setting, save_settings
 from ..text import ALIGNMENTS, TEXT_SWITCHES, font_without_size
 from ..tools import DENSITY_RANGE, SHAPE_IDS, SHAPES_TOOL_ID, TOOL_CLASSES
@@ -33,21 +34,41 @@ class SessionMixin:
     def _note_change(self) -> None:
         self._changes += 1
 
-    def _keep_recovery_copy(self) -> bool:
-        """Keep a fresh copy of unsaved work, when there is any the last copy lacks."""
+    def _keep_recovery_copy(self, done=None) -> bool:
+        """Keep a fresh copy of unsaved work, when there is any the last copy lacks.
+
+        `done` hears how it went: None, or why the copy could not be kept.
+        """
         document = self.canvas.document
         if not document.modified:
             self._forget_recovery_copy()
         elif self._kept_changes != self._changes:
             self._kept_changes = self._changes
+
+            def kept(error: str | None) -> None:
+                self._say_recovery_failed(error)
+                if done is not None:
+                    done(error)
+
             self._recovery.save(
                 document,
                 {
                     "title": document.title,
                     "file": document.file.get_uri() if document.file is not None else None,
                 },
+                kept,
             )
         return GLib.SOURCE_CONTINUE
+
+    def _say_recovery_failed(self, error: str | None) -> None:
+        """Say that work is no longer being kept safe: once, not every half minute."""
+        if error is None:
+            self._recovery_failed = False
+        elif not self._recovery_failed:
+            self._recovery_failed = True
+            self.show_toast(
+                _("Could not keep a recovery copy of unsaved work: {message}").format(message=error)
+            )
 
     def _forget_recovery_copy(self) -> None:
         if self._kept_changes is not None:
@@ -71,10 +92,13 @@ class SessionMixin:
             and not self.canvas.has_floating
         )
 
-    def show_recovered(self, document: Document) -> None:
-        """Take over an image brought back after a crash, and keep a copy of it straight away."""
+    def show_recovered(self, document: Document, done=None) -> None:
+        """Take over an image brought back after a crash, and keep a copy of it straight away.
+
+        `done` hears how keeping it went: None, or why it could not be kept.
+        """
         self._set_document(document)
-        self._keep_recovery_copy()
+        self._keep_recovery_copy(done)
 
     def _restore_window_size(self) -> None:
         width = _whole(load_setting("window-width"), 1120)

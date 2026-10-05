@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from gi.repository import Adw, Gtk
 
+from ..canvas import too_large_message
 from ..document import DEFAULT_HEIGHT, DEFAULT_WIDTH, MAX_SIZE, Document, new_surface
 from ..i18n import _
 
@@ -89,8 +90,12 @@ class ImageDialogsMixin:
             (document.width, document.height),
             "resize",
             _("Resize"),
-            document.resize,
+            lambda width, height: self._say_if_too_large(document, document.resize(width, height)),
         )
+
+    def _say_if_too_large(self, document, fitted: bool) -> None:
+        if not fitted:
+            self.show_toast(too_large_message(len(document.layers)))
 
     def _prompt_scale_image(self) -> None:
         """Ask for a new size for the picture itself, in pixels or as a percentage."""
@@ -178,7 +183,7 @@ class ImageDialogsMixin:
             values = [spin.get_value() for spin in spins]
             if in_percent():
                 values = [scaled_side(side, value) for side, value in zip(original, values)]
-            document.scale(int(values[0]), int(values[1]))
+            self._say_if_too_large(document, document.scale(int(values[0]), int(values[1])))
 
         dialog.connect("response", on_response)
         dialog.present(self)

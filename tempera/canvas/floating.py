@@ -31,6 +31,11 @@ NUDGE_STEP = 1
 NUDGE_STEP_FAST = 10
 
 
+def too_large_message(layers: int) -> str:
+    """What to say when a picture cannot grow because of the memory its layers would take."""
+    return _("A picture with {count} layers cannot be that large").format(count=layers)
+
+
 # The rotate grip sits this far above the middle of a paste's top edge, in
 # image pixels at the default interface size, like the other grips.
 ROTATE_GRIP_OFFSET = 22
@@ -584,7 +589,7 @@ class FloatingMixin:
         self._refresh_text()
 
     def _on_key_pressed(self, controller, keyval, keycode, state) -> bool:
-        if self._working:
+        if self._working or self.frozen:
             # A fill is still painting; Delete or a nudge would paint under it.
             return False
         if self._text is not None:
@@ -656,6 +661,8 @@ class FloatingMixin:
         return True
 
     def _on_drop(self, target, value, x: float, y: float) -> bool:
+        if self.frozen:
+            return False
         x, y = self._to_image(x, y)
         if isinstance(value, Gdk.FileList):
             files = value.get_files()

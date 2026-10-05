@@ -144,7 +144,7 @@ def test_a_layer_declaring_a_vast_size_is_refused_before_it_is_decoded():
 
 
 def test_too_many_layers_are_refused(monkeypatch):
-    monkeypatch.setattr(openraster, "MAX_LAYERS", 2)
+    monkeypatch.setattr(openraster, "layer_limit", lambda width, height: 2)
     layers = b"".join(b"<layer src='a.png'/>" for _each in range(3))
     stack = b"<image w='2' h='2'><stack>" + layers + b"</stack></image>"
     with pytest.raises(OpenRasterError):
@@ -165,3 +165,50 @@ def test_a_layer_of_its_own_writes_and_reads_back():
     stream.seek(0)
     _width, _height, [back] = read_openraster(stream)
     assert back.name == "Only"
+
+
+# Files that are damaged, or built to do harm
+
+
+def test_damaged_packing_is_refused_not_raised():
+    stream = io.BytesIO()
+    stack = b"<image w='2' h='2'><stack><layer src='a.png'/></stack></image>" + b" " * 200
+    with zipfile.ZipFile(stream, "w", zipfile.ZIP_DEFLATED) as ora:
+        ora.writestr("stack.xml", stack)
+        ora.writestr("a.png", png(new_surface(2, 2, RED)), compress_type=zipfile.ZIP_STORED)
+    data = bytearray(stream.getvalue())
+    # The packed bytes of stack.xml start after its 30-byte header and its name.
+    start = 30 + len("stack.xml")
+    data[start:start + 8] = b"\xff" * 8
+    with pytest.raises(OpenRasterError):
+        read_openraster(io.BytesIO(bytes(data)))
+
+
+def test_a_member_locked_with_a_password_is_refused():
+    data = bytearray(archive({"stack.xml": b"<image w='2' h='2'><stack/></image>"}).getvalue())
+    # The "encrypted" flag, in the member's own header and in the index at the end.
+    data[6] |= 1
+    index = data.rfind(b"PK\x01\x02")
+    data[index + 8] |= 1
+    with pytest.raises(OpenRasterError):
+        read_openraster(io.BytesIO(bytes(data)))
+
+
+def test_many_layers_of_a_vast_canvas_are_refused_before_any_is_made(monkeypatch):
+    made = []
+    real = openraster.new_surface
+    monkeypatch.setattr(
+        openraster, "new_surface", lambda *args: made.append(args) or real(1, 1)
+    )
+    layers = b"".join(b"<layer src='a.png'/>" for _each in range(100))
+    stack = b"<image w='8192' h='8192'><stack>" + layers + b"</stack></image>"
+    with pytest.raises(OpenRasterError):
+        read_openraster(archive({"stack.xml": stack, "a.png": png(new_surface(1, 1, RED))}))
+    assert made == []
+
+
+def test_a_name_no_file_can_carry_still_writes_a_file_that_opens():
+    document = Document(new_surface(2, 2, WHITE))
+    document.layers[0].name = "Ink\x0b\x00lines"
+    _width, _height, layers = read_openraster(io.BytesIO(written(document)))
+    assert layers[0].name == "Inklines"

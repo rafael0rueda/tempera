@@ -122,6 +122,9 @@ class Canvas(
         # A slow press, such as a fill, still at work off the UI thread, and
         # where the button was let go if that happened first.
         self._working = False
+        # Set while the window reads the file that will replace this picture:
+        # anything drawn meanwhile would be thrown away with it.
+        self.frozen = False
         self._pending_release: tuple[float, float] | None = None
 
         # Anchored top-left like the image itself; CanvasFrame does the centering.
@@ -249,8 +252,11 @@ class Canvas(
 
     @property
     def is_dragging(self) -> bool:
-        """Whether a stroke, move or resize is under way: a button is held, or a fill still at work."""
-        return self._drag_origin is not None or self._working
+        """Whether a stroke, move or resize is under way: a button is held, or a fill still at work.
+
+        A picture about to be replaced counts too: it is not to be touched either.
+        """
+        return self._drag_origin is not None or self._working or self.frozen
 
     def select_layer(self, index: int) -> None:
         """Paint on another layer from now on, first landing what floats on the one it was placed on."""

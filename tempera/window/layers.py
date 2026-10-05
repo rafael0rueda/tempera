@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from gi.repository import Adw, Gio, GLib, Gtk
 
-from ..document import MAX_LAYERS, Document
+from ..document import Document
 from ..i18n import _
 
 # The actions that change which layers there are or their order. Like the
@@ -57,8 +57,11 @@ class LayersMixin:
         self.canvas.commit_floating()
         document = self.canvas.document
         count = len(document.layers)
-        if change(document) is False and count >= MAX_LAYERS:
-            self.show_toast(_("A picture can have at most {count} layers").format(count=MAX_LAYERS))
+        limit = document.layer_limit
+        if change(document) is False and count >= limit:
+            self.show_toast(
+                _("A picture this size can have at most {count} layers").format(count=limit)
+            )
         elif len(document.layers) > count:
             # A new layer is easy to lose track of with the panel hidden.
             self.show_layers_panel()
@@ -79,8 +82,8 @@ class LayersMixin:
         document = self.canvas.document
         count, current = len(document.layers), document.current
         enabled = {
-            "add-layer": count < MAX_LAYERS,
-            "duplicate-layer": count < MAX_LAYERS,
+            "add-layer": count < document.layer_limit,
+            "duplicate-layer": count < document.layer_limit,
             "delete-layer": count > 1,
             "flatten-image": count > 1,
             "raise-layer": current < count - 1,

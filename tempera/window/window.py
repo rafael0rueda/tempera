@@ -89,6 +89,7 @@ class TemperaWindow(
         self._recovery = recovery.RecoverySlot()
         self._changes = 0
         self._kept_changes: int | None = None
+        self._recovery_failed = False
         self._recovery_timer = GLib.timeout_add_seconds(
             recovery.INTERVAL, self._keep_recovery_copy
         )
