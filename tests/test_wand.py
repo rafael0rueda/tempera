@@ -10,7 +10,7 @@ from tempera.canvas import Canvas, pointer
 from tempera.color import ColorState
 from tempera.document import Document, new_surface
 from tempera.selection import Selection
-from tempera.tools.wand import WandTool
+from tempera.tools.wand import MagicWandTool
 from tempera.window import TemperaWindow
 
 from driving import FakeGesture
@@ -233,7 +233,7 @@ def test_a_view_off_the_selection_draws_nothing():
 
 
 def test_the_wand_works_out_the_edges_before_it_hands_the_selection_over():
-    tool = WandTool()
+    tool = MagicWandTool()
     surface = new_surface(40, 40, WHITE)
     paint_pixel(surface, 20, 20, (0.0, 0.0, 0.0, 1.0))
 
