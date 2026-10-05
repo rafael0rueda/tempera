@@ -712,3 +712,24 @@ def test_a_layer_name_loses_what_a_file_cannot_carry():
     assert document.layer.name == "Ink lines"
     assert not document.rename_layer(0, "\x00\x0b")
     assert document.layer.name == "Ink lines"
+
+
+# A picture started see-through stays see-through where it grows
+
+
+def test_a_picture_started_see_through_grows_and_empties_to_nothing():
+    document = Document(new_surface(4, 4, (0.0, 0.0, 0.0, 0.0)))
+    document.backdrop = (0.0, 0.0, 0.0, 0.0)
+    paint_pixel(document.surface, 1, 1, RED)
+    document.resize(8, 8)
+    assert pixel_at(document.surface, 6, 6)[3] == 0
+    document.erase((0, 0, 4, 4))
+    assert pixel_at(document.surface, 1, 1)[3] == 0
+    document.paste(new_surface(2, 2, RED), 10, 10)
+    assert pixel_at(document.surface, 9, 9)[3] == 0
+
+
+def test_any_other_picture_still_grows_white():
+    document = Document(new_surface(4, 4, WHITE))
+    document.resize(8, 8)
+    assert pixel_at(document.surface, 6, 6) == (255, 255, 255, 255)

@@ -838,3 +838,50 @@ def test_select_all_does_not_land_text_being_typed(window, application):
     assert application.get_accels_for_action("win.select-all") == []
     window.canvas.cancel_text()
     assert application.get_accels_for_action("win.select-all") == ["<Control>a"]
+
+
+# What a session leaves for the next
+
+
+def test_erasing_to_nothing_and_the_last_new_image_are_remembered(window, application):
+    window._erase_check.set_active(True)
+    window._new_image = (320, 200, True)
+    window._save_preferences()
+    other = TemperaWindow(application)
+    try:
+        assert other.canvas.erase_to_transparency and other._erase_check.get_active()
+        assert other._new_image == (320, 200, True)
+    finally:
+        other.destroy()
+
+
+def test_everything_saved_is_also_put_back(window, application):
+    # One list drives both, so a key can no longer be saved and never restored.
+    keys = [option.key for option in window._options()]
+    assert len(keys) == len(set(keys))
+    window.lookup_action("tool").change_state(GLib.Variant.new_string("text"))
+    window.lookup_action("line-style").change_state(GLib.Variant.new_string("dotted"))
+    window.lookup_action("pixel-grid").change_state(GLib.Variant.new_boolean(True))
+    window._density_scale.set_value(61)
+    window.colors.primary = rgba("#26a269")
+    window._save_preferences()
+    other = TemperaWindow(application)
+    try:
+        assert {option.key: option.read() for option in other._options()} == {
+            option.key: option.read() for option in window._options()
+        }
+    finally:
+        other.destroy()
+
+
+def test_each_tool_names_its_page_of_options(window):
+    for tool, page in (("shapes", "shape"), ("eraser", "eraser"), ("fill", "fill"), ("wand", "wand"),
+                       ("select", "select"), ("lasso", "select"), ("text", "text"), ("pencil", "none")):
+        window.lookup_action("tool").change_state(GLib.Variant.new_string(tool))
+        assert window._tool_options.get_visible_child_name() == page
+
+
+def test_the_shape_styles_wait_in_a_popover(window):
+    window.lookup_action("tool").change_state(GLib.Variant.new_string("shapes"))
+    assert window._shape_style_button.get_popover() is not None
+    assert window._arrow_ends_row.get_ancestor(Gtk.Popover) is not None

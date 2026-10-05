@@ -65,17 +65,23 @@ class ImageDialogsMixin:
         dialog.present(self)
 
     def _prompt_new_size(self) -> None:
-        transparent = Gtk.CheckButton(label=_("Transparent background"))
+        last_width, last_height, last_transparent = self._new_image
+        transparent = Gtk.CheckButton(label=_("Transparent background"), active=last_transparent)
         transparent.set_tooltip_text(_("Start with nothing rather than white"))
 
         def create(width: int, height: int) -> None:
+            # Offered again the next time: the same size is often wanted twice.
+            self._new_image = (width, height, transparent.get_active())
             fill = TRANSPARENT if transparent.get_active() else WHITE
-            self._set_document(Document(new_surface(width, height, fill)))
+            document = Document(new_surface(width, height, fill))
+            # Where it later grows, it grows with the same.
+            document.backdrop = fill
+            self._set_document(document)
 
         self._prompt_size(
             _("New image"),
             _("Choose a canvas size in pixels."),
-            (DEFAULT_WIDTH, DEFAULT_HEIGHT),
+            (last_width, last_height),
             "create",
             _("Create"),
             create,
@@ -88,7 +94,9 @@ class ImageDialogsMixin:
 
         self._prompt_size(
             _("Canvas size"),
-            _("The image keeps its top-left corner; extra space is filled with white."),
+            _("The image keeps its top-left corner; extra space is left see-through.")
+            if document.backdrop[3] == 0
+            else _("The image keeps its top-left corner; extra space is filled with white."),
             (document.width, document.height),
             "resize",
             _("Resize"),

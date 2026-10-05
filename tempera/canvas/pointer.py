@@ -12,7 +12,7 @@ from gi.repository import Gdk, GLib
 
 from ..background import run_in_background
 from ..interface_size import scaled
-from ..tools import WAND_TOOL_ID, ToolContext
+from ..tools import ToolContext
 from ..tools.base import rect_handles
 from .drags import CanvasResize, Drag, PasteGrab, PasteMove, ShapeAdjust, Stroke, TextDrag
 from .floating import TEXT_PADDING, rotate_grip
@@ -180,7 +180,7 @@ class PointerMixin:
             arrow_ends=self.arrow_ends,
             antialias=self.smooth_shapes,
             erase_to_transparency=self.erase_to_transparency,
-            tolerance=self.wand_tolerance if self.active_tool.id == WAND_TOOL_ID else self.fill_tolerance,
+            tolerance=getattr(self, self.active_tool.tolerance or "fill_tolerance"),
             density=self.airbrush_density,
             reach=scaled(POINT_REACH) / self.zoom,
             pick_color=lambda color, btn: self.emit("color-picked", color, btn),

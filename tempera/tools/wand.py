@@ -17,6 +17,8 @@ class MagicWandTool(Tool):
     """
 
     id = "wand"
+    options_page = "wand"
+    tolerance = "wand_tolerance"
     label = _("Magic Wand")
     icon_name = "tempera-select-wand-symbolic"
     # Picking a region changes nothing in the image; moving or deleting it later does.

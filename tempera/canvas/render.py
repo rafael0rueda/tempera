@@ -239,6 +239,9 @@ class RenderMixin:
         the canvas grow, and where a selection moved from it."""
         document = self._document
         image_width, image_height = document.width, document.height
+        if document.backdrop[3] == 0:
+            # A picture started see-through grows and empties to nothing: there is no white to show.
+            return
         paste = self._paste
         if paste is not None:
             if paste.source is not None and document.current == 0:

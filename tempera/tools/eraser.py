@@ -14,6 +14,7 @@ TRANSPARENT.parse("rgba(0,0,0,0)")
 
 class EraserTool(FreehandTool):
     id = "eraser"
+    options_page = "eraser"
     label = _("Eraser")
     icon_name = "tempera-eraser-symbolic"
     antialias = False

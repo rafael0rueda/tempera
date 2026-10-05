@@ -57,6 +57,8 @@ def flood_fill(
 
 class FillTool(Tool):
     id = "fill"
+    options_page = "fill"
+    tolerance = "fill_tolerance"
     label = _("Fill")
     icon_name = "tempera-fill-symbolic"
     tip_icon_name = "tempera-fill-tip-symbolic"

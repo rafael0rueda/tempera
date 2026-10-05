@@ -12,11 +12,9 @@ from ..i18n import _
 from ..text import FONT_SIZE_RANGE, TEXT_SWITCHES, font_size, font_without_size, with_font_size
 from ..tools import (
     DENSITY_RANGE,
-    PICKER_TOOL_ID,
     SELECTION_SHAPE_IDS,
     SHAPE_CLASSES,
     TOOL_CLASSES,
-    WAND_TOOL_ID,
 )
 
 # The one size slider serves the brush and, with the text tool up, the font.
@@ -149,19 +147,24 @@ class ToolOptionsMixin:
                 ("crisp", "tempera-crisp-edges-symbolic", "Crisp Edges"),
             ),
         )
-        self._arrow_ends_separator = _bar_separator()
+        # Set once and left alone more often than not, these wait in a popover:
+        # side by side with the nine shapes they would not fit the window.
+        self._arrow_ends_row = self._style_row(_("Arrowheads"), self._arrow_ends)
+        styles = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        for margin in ("top", "bottom", "start", "end"):
+            setattr(styles.props, f"margin_{margin}", 10)
+        styles.append(self._style_row(_("Outline"), line_styles))
+        styles.append(self._arrow_ends_row)
+        styles.append(self._style_row(_("Edges"), edges))
+        self._shape_style_button = Gtk.MenuButton(
+            label=_("Style"), popover=Gtk.Popover(child=styles), valign=Gtk.Align.CENTER
+        )
+        self._shape_style_button.set_tooltip_text(
+            _("Dashed or dotted outlines, arrowheads, and smooth or crisp edges")
+        )
         self._add_page(
             "shape",
-            _row(
-                self._outline_toggle,
-                self._fill_toggle,
-                _bar_separator(),
-                line_styles,
-                self._arrow_ends_separator,
-                self._arrow_ends,
-                _bar_separator(),
-                edges,
-            ),
+            _row(self._outline_toggle, self._fill_toggle, _bar_separator(), self._shape_style_button),
         )
         self.colors.connect("changed", lambda *_args: self._sync_color_chips())
 
@@ -493,6 +496,15 @@ class ToolOptionsMixin:
             chip.color = self.colors.secondary
         self._background_chip.color = self.colors.secondary
 
+    @staticmethod
+    def _style_row(caption: str, choices: Gtk.Widget) -> Gtk.Box:
+        """A named row of the shape styles' popover."""
+        row = Gtk.Box(spacing=12)
+        label = Gtk.Label(label=caption, xalign=0, hexpand=True)
+        row.append(label)
+        row.append(choices)
+        return row
+
     def _sync_shape_options(self) -> None:
         """Show what the shape in hand will draw: a line is all outline, whatever is set."""
         canvas = self.canvas
@@ -505,8 +517,7 @@ class ToolOptionsMixin:
         self._syncing_shape_options = False
         # Only an arrow has heads.
         arrow = canvas.shapes.shape.id == "arrow"
-        self._arrow_ends.set_visible(arrow)
-        self._arrow_ends_separator.set_visible(arrow)
+        self._arrow_ends_row.set_visible(arrow)
 
     def _on_outline_toggled(self, button: Gtk.ToggleButton) -> None:
         if self._syncing_shape_options:
@@ -540,24 +551,9 @@ class ToolOptionsMixin:
         self._tool_label.set_label(canvas.active_tool.label)
         self._shape_picker.set_visible(canvas.supports_fill)
         self._size_section.set_visible(canvas.active_tool.sized)
-        page = "none"
-        if canvas.supports_fill:
-            page = "shape"
+        page = canvas.active_tool.options_page
+        if page == "shape":
             self._sync_shape_options()
-        elif canvas.supports_erase_mode:
-            page = "eraser"
-        elif canvas.supports_tolerance:
-            page = "fill"
-        elif canvas.supports_density:
-            page = "airbrush"
-        elif canvas.supports_font:
-            page = "text"
-        elif canvas.active_tool.id in SELECTION_SHAPE_IDS:
-            page = "select"
-        elif canvas.active_tool.id == WAND_TOOL_ID:
-            page = "wand"
-        elif canvas.active_tool.id == PICKER_TOOL_ID:
-            page = "picker"
         self._tool_options.set_visible_child_name(page)
         # Ctrl+B with a brush in hand would otherwise restyle, unseen, the next text typed.
         for name in (*(f"text-{switch}" for switch in TEXT_SWITCHES), "text-align"):

@@ -389,6 +389,9 @@ class Document(GObject.Object):
         # The top layer, as for an image opened with several.
         self.current = len(self.layers) - 1
         self.file = None
+        # What the canvas is made of: what the bottom layer gets where it grows
+        # or is emptied. White, unless the picture was started see-through.
+        self.backdrop = WHITE
         # What its file holds that Tempera has no place for, such as how the
         # layers blend: saving over the file would lose it for good.
         self.lost: tuple[str, ...] = ()
@@ -746,10 +749,10 @@ class Document(GObject.Object):
     # Edits to the whole image, every layer at once
 
     def _vacated_fill(self, index: int | None = None) -> tuple[float, float, float, float]:
-        """What a layer's emptied pixels become: white at the bottom, where the
-        canvas is made of it, and see-through above, so what is beneath shows."""
+        """What a layer's emptied pixels become: at the bottom what the canvas is
+        made of, white as a rule, and see-through above, so what is beneath shows."""
         index = self.current if index is None else index
-        return WHITE if index == 0 else TRANSPARENT
+        return self.backdrop if index == 0 else TRANSPARENT
 
     @staticmethod
     def _resized_surface(
@@ -780,10 +783,11 @@ class Document(GObject.Object):
         """Whether the picture could be this size with the layers it has."""
         return len(self.layers) <= layer_limit(width, height)
 
-    def resize(self, width: int, height: int, fill=WHITE) -> bool:
+    def resize(self, width: int, height: int, fill=None) -> bool:
         """Grow or crop the canvas, keeping the existing pixels anchored top-left.
 
-        The bottom layer grows with `fill`, the ones above it with nothing.
+        The bottom layer grows with `fill`, or else with what the canvas is
+        made of, and the ones above it with nothing.
         Returns False, changing nothing, when its layers would take too much
         memory at that size.
         """
@@ -793,6 +797,7 @@ class Document(GObject.Object):
             return True
         if not self.fits(width, height):
             return False
+        fill = self.backdrop if fill is None else fill
         self._transform(
             lambda index, surface: self._resized_surface(
                 surface, width, height, fill if index == 0 else TRANSPARENT

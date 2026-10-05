@@ -14,7 +14,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 from .. import APP_NAME, interface_size, recovery, shortcuts
 from ..canvas import PIXEL_GRID_ZOOM, Canvas
 from ..color import ColorBar, ColorState
-from ..document import Document
+from ..document import DEFAULT_HEIGHT, DEFAULT_WIDTH, Document
 from ..i18n import _
 from ..settings import load_palette_position, save_settings
 from ..preferences import PreferencesDialog
@@ -97,6 +97,8 @@ class TemperaWindow(
         self._changes = 0
         self._kept_changes: int | None = None
         self._recovery_failed = False
+        # The size and background last asked for a new image.
+        self._new_image = (DEFAULT_WIDTH, DEFAULT_HEIGHT, False)
         self._hidden_toast: Adw.Toast | None = None
         self._recovery_timer = GLib.timeout_add_seconds(
             recovery.INTERVAL, self._keep_recovery_copy

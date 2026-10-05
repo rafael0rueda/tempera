@@ -27,6 +27,7 @@ class AirbrushTool(FreehandTool):
     """Sprays dots at random inside a circle the size of the brush, for as long as it is held."""
 
     id = "airbrush"
+    options_page = "airbrush"
     label = _("Airbrush")
     icon_name = "tempera-airbrush-symbolic"
     tip_icon_name = "tempera-airbrush-tip-symbolic"

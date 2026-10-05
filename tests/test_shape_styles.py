@@ -183,9 +183,9 @@ def test_the_options_set_how_shapes_are_drawn(window):
 
 def test_arrowhead_choices_show_only_for_the_arrow(window):
     choose(window, "shape", "rectangle")
-    assert not window._arrow_ends.get_visible()
+    assert not window._arrow_ends_row.get_visible()
     choose(window, "shape", "arrow")
-    assert window._arrow_ends.get_visible()
+    assert window._arrow_ends_row.get_visible()
 
 
 def test_the_style_of_shapes_is_remembered(window, application):

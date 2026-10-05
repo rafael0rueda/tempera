@@ -7,6 +7,7 @@ from .base import Tool, ToolContext
 
 class TextTool(Tool):
     id = "text"
+    options_page = "text"
     sized = True
     label = _("Text")
     icon_name = "tempera-text-symbolic"
