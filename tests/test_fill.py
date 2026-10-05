@@ -15,6 +15,7 @@ from tempera.document import Document, changed_rect, copy_surface, new_surface, 
 from tempera.regions import premultiplied
 from tempera.tools.fill import flood_fill
 
+from driving import FakeGesture
 from pixels import paint_pixel, pixel_at
 
 WHITE = (1.0, 1.0, 1.0, 1.0)
@@ -175,14 +176,6 @@ def test_fills_a_region_that_winds_back_on_itself():
 
 
 # Filling from the canvas, which runs the fill off the UI thread
-
-
-class FakeGesture:
-    def get_current_button(self):
-        return Gdk.BUTTON_PRIMARY
-
-    def get_current_event_state(self):
-        return Gdk.ModifierType(0)
 
 
 @pytest.fixture

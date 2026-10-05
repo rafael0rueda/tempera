@@ -1,7 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Rafael Rueda
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-import time
 
 import pytest
 from gi.repository import Adw, Gdk, Gio, GdkPixbuf, GLib, Gtk
@@ -12,29 +11,10 @@ from tempera.document import new_surface
 from tempera.main import TemperaApplication
 from tempera.window import TemperaWindow, scaled_side
 
+from driving import wait_until
 from pixels import paint_pixel, pixel_at
 
 RED = (1.0, 0.0, 0.0, 1.0)
-
-
-@pytest.fixture(scope="module")
-def application():
-    app = Adw.Application(
-        application_id="io.github.rafael0rueda.Tempera.Tests",
-        flags=Gio.ApplicationFlags.NON_UNIQUE,
-    )
-    # Windows can only be added once the application has started up.
-    app.register(None)
-    return app
-
-
-@pytest.fixture
-def window(application, monkeypatch, tmp_path):
-    monkeypatch.setattr(recent_files, "_recent_file_path", lambda: tmp_path / "recent-files.txt")
-    monkeypatch.setattr(settings, "_settings_path", lambda: tmp_path / "settings.ini")
-    window = TemperaWindow(application)
-    yield window
-    window.destroy()
 
 
 def test_undo_waits_while_a_stroke_is_under_way(window):
@@ -196,16 +176,6 @@ def settle():
         context.iteration(False)
 
 
-def settle_until(condition, timeout=5.0):
-    """Keep the main loop turning until something a worker thread started has finished."""
-    context = GLib.MainContext.default()
-    deadline = time.monotonic() + timeout
-    while not condition() and time.monotonic() < deadline:
-        context.iteration(False)
-        time.sleep(0.002)
-    return condition()
-
-
 def test_unchanged_window_closes_on_the_first_try(application, window):
     window.present()
     settle()
@@ -275,7 +245,7 @@ def test_save_keeps_the_jpeg_quality_without_asking(window, tmp_path):
 
     window.activate_action("win.save", None)
 
-    assert settle_until(lambda: not window._busy)
+    assert wait_until(lambda: not window._busy)
     assert path.stat().st_size > 0
     assert window.get_visible_dialog() is None
 
@@ -288,7 +258,7 @@ def test_saving_shows_a_spinner_until_it_is_done(window, tmp_path):
     assert window._busy
     assert window._busy_spinner.get_visible()
 
-    assert settle_until(lambda: not window._busy)
+    assert wait_until(lambda: not window._busy)
     assert not window._busy_spinner.get_visible()
     assert path.exists()
 
@@ -303,7 +273,7 @@ def test_painting_while_a_save_runs_leaves_the_image_modified(window, tmp_path):
     paint_pixel(document.surface, 0, 0, RED)
     document.commit_change()
 
-    assert settle_until(lambda: not window._busy)
+    assert wait_until(lambda: not window._busy)
     assert document.modified
 
 
@@ -315,7 +285,7 @@ def test_a_second_save_is_ignored_while_one_is_running(window, tmp_path):
     window.activate_action("win.save", None)
     window.activate_action("win.save", None)
 
-    assert settle_until(lambda: not window._busy)
+    assert wait_until(lambda: not window._busy)
     assert not window._busy
 
 
@@ -328,7 +298,7 @@ def test_opening_an_image_reads_it_in_the_background(window, tmp_path):
     window._open_file(Gio.File.new_for_path(str(path)), "no: {message}")
     assert window._busy
 
-    assert settle_until(lambda: not window._busy)
+    assert wait_until(lambda: not window._busy)
     assert (window.canvas.document.width, window.canvas.document.height) == (7, 3)
     assert str(path) in load_recent_uris()
 
@@ -341,7 +311,7 @@ def test_an_image_that_cannot_be_read_says_so_and_keeps_the_old_one(window, tmp_
 
     window._open_file(Gio.File.new_for_path(str(path)), "no: {message}", lambda: forgotten.append(True))
 
-    assert settle_until(lambda: not window._busy)
+    assert wait_until(lambda: not window._busy)
     assert window.canvas.document is before
     assert forgotten
 
@@ -438,7 +408,7 @@ def test_an_image_larger_than_the_window_opens_zoomed_out(application, window, t
     pixbuf.savev(str(path), "png", [], [])
 
     window._open_file(Gio.File.new_for_path(str(path)), "no: {message}")
-    assert settle_until(lambda: not window._busy)
+    assert wait_until(lambda: not window._busy)
     settle()
 
     assert window.canvas.zoom < 1.0
@@ -454,7 +424,7 @@ def test_a_small_image_opens_at_full_size(window, tmp_path):
     pixbuf.savev(str(path), "png", [], [])
 
     window._open_file(Gio.File.new_for_path(str(path)), "no: {message}")
-    assert settle_until(lambda: not window._busy)
+    assert wait_until(lambda: not window._busy)
     settle()
 
     assert window.canvas.zoom == 1.0

@@ -5,9 +5,8 @@ import math
 
 import cairo
 import pytest
-from gi.repository import Adw, Gdk, Gio, GLib
+from gi.repository import Gdk, GLib
 
-from tempera import recent_files, settings
 from tempera.canvas import PIXEL_GRID_ZOOM, Canvas
 from tempera.color import ColorState
 from tempera.document import Document, new_surface
@@ -15,6 +14,7 @@ from tempera.tools.airbrush import AirbrushTool, dots_per_spray
 from tempera.tools.base import ToolContext
 from tempera.window import TemperaWindow
 
+from driving import FakeGesture
 from pixels import pixel_at, render_widget
 
 WHITE = (1.0, 1.0, 1.0, 1.0)
@@ -108,14 +108,6 @@ def canvas():
     return canvas
 
 
-class FakeGesture:
-    def get_current_button(self):
-        return Gdk.BUTTON_PRIMARY
-
-    def get_current_event_state(self):
-        return Gdk.ModifierType(0)
-
-
 def test_the_canvas_keeps_spraying_until_release_and_it_is_one_undo_step(canvas):
     gesture = FakeGesture()
     canvas._on_drag_begin(gesture, 30, 30)
@@ -186,25 +178,6 @@ def test_the_grid_draws_a_thin_line_between_pixels(canvas):
 
 
 # The window
-
-
-@pytest.fixture(scope="module")
-def application():
-    app = Adw.Application(
-        application_id="io.github.rafael0rueda.Tempera.AirbrushTests",
-        flags=Gio.ApplicationFlags.NON_UNIQUE,
-    )
-    app.register(None)
-    return app
-
-
-@pytest.fixture
-def window(application, monkeypatch, tmp_path):
-    monkeypatch.setattr(recent_files, "_recent_file_path", lambda: tmp_path / "recent-files.txt")
-    monkeypatch.setattr(settings, "_settings_path", lambda: tmp_path / "settings.ini")
-    window = TemperaWindow(application)
-    yield window
-    window.destroy()
 
 
 def test_the_airbrush_shows_its_density(window):

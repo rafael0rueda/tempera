@@ -11,23 +11,12 @@ from tempera import document as document_module
 from tempera.document import Document, new_surface
 from tempera.file_io import save_as_name, with_default_extension
 from tempera.window import TemperaWindow
-from tempera.window import layers as layers_module
 from tempera.window.layers_panel import LayerDrag
 
 from pixels import paint_pixel, pixel_at
 
 RED = (1.0, 0.0, 0.0, 1.0)
 WHITE = (1.0, 1.0, 1.0, 1.0)
-
-
-@pytest.fixture(scope="module")
-def application():
-    app = Adw.Application(
-        application_id="io.github.rafael0rueda.Tempera.LayerTests",
-        flags=Gio.ApplicationFlags.NON_UNIQUE,
-    )
-    app.register(None)
-    return app
 
 
 @pytest.fixture

@@ -13,6 +13,7 @@ from tempera.color import ColorState
 from tempera.document import Document, new_surface
 from tempera.selection import Selection
 
+from driving import FakeGesture
 from pixels import paint_pixel, pixel_at, render_widget
 
 RED = (1.0, 0.0, 0.0, 1.0)
@@ -104,17 +105,6 @@ def test_a_new_outline_counts_as_a_different_selection():
 
 
 # Drawing it on the canvas
-
-
-class FakeGesture:
-    def __init__(self, state=Gdk.ModifierType(0)):
-        self.state = state
-
-    def get_current_button(self):
-        return Gdk.BUTTON_PRIMARY
-
-    def get_current_event_state(self):
-        return self.state
 
 
 def lasso(canvas, outline):

@@ -35,3 +35,55 @@ def private_print_settings(monkeypatch, tmp_path):
     path = tmp_path / "print-settings.ini"
     monkeypatch.setattr(printing, "_print_setup_path", lambda: path)
     return path
+
+
+@pytest.fixture(autouse=True)
+def private_settings(monkeypatch, tmp_path):
+    """Settings and recent files are each test's own, never the ones in the home folder,
+    and what a test leaves set for the whole process is put back."""
+    from tempera import interface_size, recent_files, settings, shortcuts
+
+    path = tmp_path / "settings.ini"
+    monkeypatch.setattr(settings, "_settings_path", lambda: path)
+    monkeypatch.setattr(recent_files, "_recent_file_path", lambda: tmp_path / "recent-files.txt")
+    monkeypatch.setattr(settings, "_cache", None)
+    monkeypatch.setattr(shortcuts, "_suspended", False)
+    yield path
+    if interface_size.current() != interface_size.DEFAULT_SIZE:
+        interface_size.apply(interface_size.DEFAULT_SIZE)
+
+
+@pytest.fixture(scope="module")
+def application(request):
+    """An application for a module's windows to belong to."""
+    from gi.repository import Adw, Gio
+
+    name = "".join(part.capitalize() for part in request.module.__name__.split("_"))
+    app = Adw.Application(
+        application_id=f"io.github.rafael0rueda.Tempera.{name}",
+        flags=Gio.ApplicationFlags.NON_UNIQUE,
+    )
+    # Windows can only be added once the application has started up.
+    app.register(None)
+    return app
+
+
+@pytest.fixture
+def window(application):
+    from tempera.window import TemperaWindow
+
+    window = TemperaWindow(application)
+    yield window
+    window.destroy()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def app_resources():
+    """Every test sees the canvas and the widgets styled as the app styles them,
+    whichever tests ran before it."""
+    from gi.repository import Adw
+
+    from tempera.main import load_resources
+
+    Adw.init()
+    load_resources()

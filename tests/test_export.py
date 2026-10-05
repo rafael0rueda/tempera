@@ -3,40 +3,19 @@
 
 """Export As: a copy in another format, leaving the picture its own file."""
 
-import time
 
 import cairo
-import pytest
 from gi.repository import Adw, Gio, GLib
 
-from tempera import recent_files, settings, shortcuts
+from tempera import shortcuts
 from tempera.document import Document, new_surface
 from tempera.file_io import export_name, load_document, save_document
-from tempera.window import TemperaWindow
 
+from driving import wait_until
 from pixels import paint_pixel, pixel_at
 
 WHITE = (1.0, 1.0, 1.0, 1.0)
 RED = (1.0, 0.0, 0.0, 1.0)
-
-
-@pytest.fixture(scope="module")
-def application():
-    app = Adw.Application(
-        application_id="io.github.rafael0rueda.Tempera.ExportTests",
-        flags=Gio.ApplicationFlags.NON_UNIQUE,
-    )
-    app.register(None)
-    return app
-
-
-@pytest.fixture
-def window(application, monkeypatch, tmp_path):
-    monkeypatch.setattr(recent_files, "_recent_file_path", lambda: tmp_path / "recent-files.txt")
-    monkeypatch.setattr(settings, "_settings_path", lambda: tmp_path / "settings.ini")
-    window = TemperaWindow(application)
-    yield window
-    window.destroy()
 
 
 def layered_ora(tmp_path) -> Document:
@@ -49,11 +28,7 @@ def layered_ora(tmp_path) -> Document:
 
 
 def wait_until_idle(window):
-    context = GLib.MainContext.default()
-    deadline = time.monotonic() + 5
-    while window._busy and time.monotonic() < deadline:
-        context.iteration(False)
-    assert not window._busy
+    assert wait_until(lambda: not window._busy)
 
 
 def test_exporting_writes_the_picture_as_it_shows_and_keeps_its_own_file(window, tmp_path):

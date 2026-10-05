@@ -4,9 +4,9 @@
 """How text looks: bold, italic, underlined, struck through, aligned, and on a box."""
 
 import pytest
-from gi.repository import Adw, Gio, GLib, Pango
+from gi.repository import GLib, Pango
 
-from tempera import recent_files, settings, shortcuts
+from tempera import shortcuts
 from tempera.canvas import Canvas
 from tempera.color import ColorState, rgba
 from tempera.document import Document, new_surface
@@ -124,25 +124,6 @@ def test_a_box_behind_text_lands_with_it(canvas):
 
 
 # In the window
-
-
-@pytest.fixture(scope="module")
-def application():
-    app = Adw.Application(
-        application_id="io.github.rafael0rueda.Tempera.TextStyleTests",
-        flags=Gio.ApplicationFlags.NON_UNIQUE,
-    )
-    app.register(None)
-    return app
-
-
-@pytest.fixture
-def window(application, monkeypatch, tmp_path):
-    monkeypatch.setattr(recent_files, "_recent_file_path", lambda: tmp_path / "recent-files.txt")
-    monkeypatch.setattr(settings, "_settings_path", lambda: tmp_path / "settings.ini")
-    window = TemperaWindow(application)
-    yield window
-    window.destroy()
 
 
 def test_the_switches_set_the_style(window):

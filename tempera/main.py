@@ -77,6 +77,26 @@ def data_dir() -> Path | None:
     return next((path for path in candidates if path.is_dir()), None)
 
 
+def load_resources() -> None:
+    """Give the display Tempera's own icons and stylesheet."""
+    directory = data_dir()
+    display = Gdk.Display.get_default()
+    if directory is None or display is None:
+        return
+
+    icons = directory / "icons"
+    if icons.is_dir():
+        Gtk.IconTheme.get_for_display(display).add_search_path(str(icons))
+
+    stylesheet = directory / "style.css"
+    if stylesheet.is_file():
+        provider = Gtk.CssProvider()
+        provider.load_from_string(stylesheet.read_text())
+        Gtk.StyleContext.add_provider_for_display(
+            display, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+        )
+
+
 class TemperaApplication(Adw.Application):
     def __init__(self):
         super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.HANDLES_OPEN)
@@ -193,25 +213,7 @@ class TemperaApplication(Adw.Application):
         return window
 
     def _load_resources(self) -> None:
-        directory = data_dir()
-        if directory is None:
-            return
-
-        display = Gdk.Display.get_default()
-        if display is None:
-            return
-
-        icons = directory / "icons"
-        if icons.is_dir():
-            Gtk.IconTheme.get_for_display(display).add_search_path(str(icons))
-
-        stylesheet = directory / "style.css"
-        if stylesheet.is_file():
-            provider = Gtk.CssProvider()
-            provider.load_from_string(stylesheet.read_text())
-            Gtk.StyleContext.add_provider_for_display(
-                display, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
-            )
+        load_resources()
 
     def _on_quit(self, *_args):
         # Each window asks about its own unsaved changes; the application ends

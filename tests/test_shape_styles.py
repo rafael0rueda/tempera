@@ -3,10 +3,8 @@
 
 """How shapes are drawn: dashed or dotted outlines, arrowheads, and crisp edges."""
 
-import pytest
-from gi.repository import Adw, Gdk, Gio, GLib
+from gi.repository import Gdk, GLib
 
-from tempera import recent_files, settings
 from tempera.canvas import Canvas
 from tempera.color import ColorState, rgba
 from tempera.document import Document, new_surface
@@ -167,25 +165,6 @@ def test_a_shape_waiting_to_land_takes_a_new_style():
     canvas.smooth_shapes = False
     ctx = canvas._make_context(Gdk.BUTTON_PRIMARY)
     assert (ctx.line_style, ctx.arrow_ends, ctx.antialias) == ("dotted", "both", False)
-
-
-@pytest.fixture(scope="module")
-def application():
-    app = Adw.Application(
-        application_id="io.github.rafael0rueda.Tempera.ShapeStyleTests",
-        flags=Gio.ApplicationFlags.NON_UNIQUE,
-    )
-    app.register(None)
-    return app
-
-
-@pytest.fixture
-def window(application, monkeypatch, tmp_path):
-    monkeypatch.setattr(recent_files, "_recent_file_path", lambda: tmp_path / "recent-files.txt")
-    monkeypatch.setattr(settings, "_settings_path", lambda: tmp_path / "settings.ini")
-    window = TemperaWindow(application)
-    yield window
-    window.destroy()
 
 
 def choose(window, action, value):

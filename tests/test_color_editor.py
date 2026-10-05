@@ -4,9 +4,9 @@
 """The colour editor, and picking a colour from the screen."""
 
 import pytest
-from gi.repository import Adw, Gdk, Gio, GLib
+from gi.repository import Gdk, GLib
 
-from tempera import color_editor, recent_files, settings
+from tempera import color_editor
 from tempera.color import ColorState, rgba
 from tempera.color_editor import MAX_CUSTOM_COLORS, ColorEditor, parse_hex, to_hex
 from tempera.screen_color import color_from_results, pick_on, request_path
@@ -257,25 +257,6 @@ def test_an_answer_without_a_colour_is_not_one():
 
 
 # In the window
-
-
-@pytest.fixture(scope="module")
-def application():
-    app = Adw.Application(
-        application_id="io.github.rafael0rueda.Tempera.ColorEditorTests",
-        flags=Gio.ApplicationFlags.NON_UNIQUE,
-    )
-    app.register(None)
-    return app
-
-
-@pytest.fixture
-def window(application, monkeypatch, tmp_path):
-    monkeypatch.setattr(recent_files, "_recent_file_path", lambda: tmp_path / "recent-files.txt")
-    monkeypatch.setattr(settings, "_settings_path", lambda: tmp_path / "settings.ini")
-    window = TemperaWindow(application)
-    yield window
-    window.destroy()
 
 
 def test_clicking_a_current_colour_opens_the_editor_for_it(window):

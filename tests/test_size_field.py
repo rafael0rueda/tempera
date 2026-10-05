@@ -3,32 +3,10 @@
 
 """The size beside the slider: typed in, or chosen from the usual ones."""
 
-import pytest
-from gi.repository import Adw, Gio, GLib
+from gi.repository import GLib
 
-from tempera import recent_files, settings
 from tempera.text import font_size
-from tempera.window import TemperaWindow
 from tempera.window.options_bar import BRUSH_SIZE_PRESETS, FONT_SIZE_PRESETS
-
-
-@pytest.fixture(scope="module")
-def application():
-    app = Adw.Application(
-        application_id="io.github.rafael0rueda.Tempera.SizeFieldTests",
-        flags=Gio.ApplicationFlags.NON_UNIQUE,
-    )
-    app.register(None)
-    return app
-
-
-@pytest.fixture
-def window(application, monkeypatch, tmp_path):
-    monkeypatch.setattr(recent_files, "_recent_file_path", lambda: tmp_path / "recent-files.txt")
-    monkeypatch.setattr(settings, "_settings_path", lambda: tmp_path / "settings.ini")
-    window = TemperaWindow(application)
-    yield window
-    window.destroy()
 
 
 def use(window, tool):

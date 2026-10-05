@@ -3,7 +3,7 @@
 
 import cairo
 import pytest
-from gi.repository import Adw, Gio, Gtk
+from gi.repository import Gtk
 
 from tempera import printing, recent_files, settings
 from tempera.document import new_surface
@@ -204,16 +204,6 @@ def test_print_hands_on_the_choices():
 
 
 # The window
-
-
-@pytest.fixture(scope="module")
-def application():
-    app = Adw.Application(
-        application_id="io.github.rafael0rueda.Tempera.PrintTests",
-        flags=Gio.ApplicationFlags.NON_UNIQUE,
-    )
-    app.register(None)
-    return app
 
 
 @pytest.fixture

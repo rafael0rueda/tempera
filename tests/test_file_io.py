@@ -4,12 +4,11 @@
 import os
 import resource
 import struct
-import time
 import zlib
 from pathlib import Path
 
 import pytest
-from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Gtk
+from gi.repository import GdkPixbuf, Gio, GLib, Gtk
 
 from tempera.document import MAX_SIZE, Document, new_surface
 from tempera.file_io import (
@@ -27,6 +26,7 @@ from tempera.file_io import (
     with_default_extension,
 )
 
+from driving import wait_until
 from pixels import paint_pixel, pixel_at
 
 RED = (1.0, 0.0, 0.0, 1.0)
@@ -418,12 +418,8 @@ def layered_document() -> Document:
     return document
 
 
-def wait(condition, seconds: float = 5.0) -> None:
-    context = GLib.MainContext.default()
-    deadline = time.monotonic() + seconds
-    while not condition() and time.monotonic() < deadline:
-        context.iteration(False)
-    assert condition()
+def wait(condition) -> None:
+    assert wait_until(condition)
 
 
 def test_saving_as_openraster_keeps_the_layers(tmp_path):

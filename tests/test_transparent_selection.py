@@ -5,29 +5,21 @@
 
 import cairo
 import pytest
-from gi.repository import Adw, Gdk, Gio, GLib
+from gi.repository import Gdk, GLib
 
-from tempera import recent_files, settings
 from tempera.canvas import Canvas
 from tempera.color import ColorState, rgba
 from tempera.document import Document, new_surface
 from tempera.regions import without_color
 from tempera.window import TemperaWindow
 
+from driving import FakeGesture
 from pixels import paint_pixel, pixel_at
 
 WHITE = (1.0, 1.0, 1.0, 1.0)
 RED = (1.0, 0.0, 0.0, 1.0)
 RED_PIXEL = (255, 0, 0, 255)
 WHITE_PIXEL = (255, 255, 255, 255)
-
-
-class FakeGesture:
-    def get_current_button(self):
-        return Gdk.BUTTON_PRIMARY
-
-    def get_current_event_state(self):
-        return Gdk.ModifierType(0)
 
 
 def test_one_colour_is_left_out_exactly():
@@ -109,25 +101,6 @@ def test_a_paste_leaves_it_out_too(canvas):
 
 
 # In the window
-
-
-@pytest.fixture(scope="module")
-def application():
-    app = Adw.Application(
-        application_id="io.github.rafael0rueda.Tempera.TransparentTests",
-        flags=Gio.ApplicationFlags.NON_UNIQUE,
-    )
-    app.register(None)
-    return app
-
-
-@pytest.fixture
-def window(application, monkeypatch, tmp_path):
-    monkeypatch.setattr(recent_files, "_recent_file_path", lambda: tmp_path / "recent-files.txt")
-    monkeypatch.setattr(settings, "_settings_path", lambda: tmp_path / "settings.ini")
-    window = TemperaWindow(application)
-    yield window
-    window.destroy()
 
 
 def test_the_option_is_shared_by_the_selection_tools_and_remembered(window, application):

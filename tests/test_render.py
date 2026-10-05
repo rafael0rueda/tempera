@@ -5,26 +5,19 @@
 
 import cairo
 import pytest
-from gi.repository import Gdk, Gsk, Gtk
+from gi.repository import Gsk, Gtk
 
 from tempera.canvas import Canvas, pointer
 from tempera.canvas.tiles import TILE_SIZE
 from tempera.color import ColorState, rgba
 from tempera.document import Document, new_surface
 
+from driving import FakeGesture
 from pixels import pixel_at, render_widget
 
 WHITE = (1.0, 1.0, 1.0, 1.0)
 WHITE_PIXEL = (255, 255, 255, 255)
 BLACK_PIXEL = (0, 0, 0, 255)
-
-
-class FakeGesture:
-    def get_current_button(self):
-        return Gdk.BUTTON_PRIMARY
-
-    def get_current_event_state(self):
-        return Gdk.ModifierType(0)
 
 
 @pytest.fixture
