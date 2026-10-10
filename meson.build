@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 project('tempera', 'c',
-  version: '2.1.1',
+  version: '2.1.2',
   meson_version: '>= 0.62.0',
   default_options: ['c_std=c11', 'warning_level=2'],
 )

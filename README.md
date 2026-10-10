@@ -36,7 +36,7 @@ Each [release](https://github.com/rafael0rueda/tempera/releases) has a Flatpak b
 attached. Download `Tempera-<version>-x86_64.flatpak` and install it for your user:
 
 ```
-flatpak install --user Tempera-2.1.1-x86_64.flatpak
+flatpak install --user Tempera-2.1.2-x86_64.flatpak
 ```
 
 It runs on the GNOME 50 runtime, which Flatpak offers to fetch from Flathub if you do
