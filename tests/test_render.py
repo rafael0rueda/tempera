@@ -3,6 +3,8 @@
 
 """The canvas draws the image as tiles of texture, uploading again only what changed."""
 
+import math
+
 import cairo
 import pytest
 from gi.repository import Gsk, Gtk
@@ -301,3 +303,41 @@ def test_changing_layer_lands_what_floats_on_the_layer_it_was_placed_on(layered)
     assert layered.document.current == 0
     assert pixel_at(layered.document.layers[1].surface, 42, 42) == BLUE_PIXEL
     assert pixel_at(layered.document.layers[0].surface, 42, 42) == WHITE_PIXEL
+
+
+# A turned paste
+
+
+def test_a_turned_paste_shows_where_it_will_land(layered, monkeypatch):
+    # Without the grips, which sit over some of what is looked at here.
+    monkeypatch.setattr(layered, "_snapshot_handles", lambda *_args: None)
+    layered.begin_paste(new_surface(40, 10, (0.0, 0.0, 1.0, 1.0)), 10, 25)
+    assert shown(layered, 42, 28) == (0, 0, 255, 255)
+    assert shown(layered, 28, 45) == WHITE_PIXEL
+
+    # A quarter turn about its middle: now ten across and forty down.
+    layered._paste.angle = math.pi / 2
+    assert layered._paste.transformed
+    assert shown(layered, 28, 45) == (0, 0, 255, 255)
+    assert shown(layered, 33, 14) == (0, 0, 255, 255)
+    assert shown(layered, 42, 28) == WHITE_PIXEL
+
+    layered.commit_paste()
+    assert pixel_at(layered.document.surface, 28, 45) == (0, 0, 255, 255)
+    assert pixel_at(layered.document.surface, 42, 28)[3] == 0
+
+
+def test_a_turned_paste_is_a_texture_made_once(layered):
+    layered.begin_paste(new_surface(20, 10, (0.0, 0.0, 1.0, 1.0)), 20, 25)
+    layered._paste.angle = 0.3
+    render_widget(layered, 60, 60)
+    surface, texture = layered._turned
+    assert surface is layered._paste.surface
+    layered._paste.angle = 0.6
+    layered._paste.move_to(22, 24)
+    render_widget(layered, 60, 60)
+    assert layered._turned[1] is texture
+
+    layered.cancel_floating()
+    render_widget(layered, 60, 60)
+    assert layered._turned is None
