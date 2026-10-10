@@ -353,8 +353,9 @@ class RenderMixin:
                 cr.restore()
             elif selection.mask is not None:
                 # Picked out pixel by pixel: the ants follow the pixels' edges.
-                # Only those in view: a pick on a photo has far more than the screen shows.
-                draw_edges_marquee(cr, selection.edges_within(*cr.clip_extents()))
+                # Only those in view: a pick on a photo has far more than the screen
+                # shows, and zoomed out more than it has pixels to show them on.
+                draw_edges_marquee(cr, selection.edges_within(*cr.clip_extents(), zoom=self.zoom))
             else:
                 draw_marquee(cr, *selection.rect)
 

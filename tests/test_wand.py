@@ -3,12 +3,14 @@
 
 """The magic wand: selecting the pixels of a colour joined to the one clicked."""
 
+import cairo
 import pytest
 from gi.repository import GLib
 
 from tempera.canvas import Canvas, pointer
 from tempera.color import ColorState
 from tempera.document import Document, new_surface
+from tempera import selection as selection_module
 from tempera.selection import Selection
 from tempera.tools.wand import MagicWandTool
 from tempera.window import TemperaWindow
@@ -245,3 +247,55 @@ def test_the_wand_works_out_the_edges_before_it_hands_the_selection_over():
     tool.press(Context, 0, 0)
     # Already there, so the first frame that draws them does not stall working them out.
     assert "_edge_bands" in tool._found.__dict__
+
+
+# Zoomed out
+
+
+def masked(width, height, pixels, x=0, y=0):
+    """A selection of a few pixels of a rectangle, picked out one by one."""
+    mask = cairo.ImageSurface(cairo.FORMAT_A8, width, height)
+    cr = cairo.Context(mask)
+    for px, py in pixels:
+        cr.rectangle(px, py, 1, 1)
+    cr.fill()
+    return Selection(x, y, width, height, mask)
+
+
+def test_zoomed_out_a_speckled_border_is_followed_in_squares_the_screen_can_show(monkeypatch):
+    monkeypatch.setattr(selection_module, "COARSE_ABOVE", 100)
+    selection = speckled_pick()
+    fine = selection.edges_within(0, 0, 300, 400)
+    assert selection.edges_within(0, 0, 300, 400, zoom=1.0) == fine
+    assert selection.edges_within(0, 0, 300, 400, zoom=2.0) == fine
+
+    # At a quarter the size, squares of four pixels: far fewer edges, all on
+    # the squares' corners, and none of them beyond the selection.
+    coarse = selection.edges_within(0, 0, 300, 400, zoom=0.25)
+    assert 0 < len(coarse) < len(fine) / 4
+    left, top, width, height = selection.rect
+    for x1, y1, x2, y2 in coarse:
+        assert left <= x1 <= x2 <= left + width and top <= y1 <= y2 <= top + height
+        for value, origin, end in ((x1, left, left + width), (x2, left, left + width),
+                                   (y1, top, top + height), (y2, top, top + height)):
+            assert (value - origin) % 4 == 0 or value == end
+    # Between a half and a quarter, the same squares: a pinch works out few sizes.
+    assert selection.edges_within(0, 0, 300, 400, zoom=0.3) == coarse
+    assert list(selection._coarse) == [4]
+    assert len(selection.edges_within(40, 130, 90, 260, zoom=0.25)) < len(coarse) / 4
+
+
+def test_a_square_is_inside_if_any_pixel_of_it_is(monkeypatch):
+    monkeypatch.setattr(selection_module, "COARSE_ABOVE", 0)
+    # One pixel, and another in the part square left over at the far corner.
+    selection = masked(10, 10, [(5, 6), (9, 9)], x=100, y=200)
+    assert covered(selection.edges_within(0, 0, 500, 500, zoom=0.25)) == covered(
+        [(104, 204, 108, 204), (104, 208, 108, 208), (104, 204, 104, 208), (108, 204, 108, 208),
+         (108, 208, 110, 208), (108, 210, 110, 210), (108, 208, 108, 210), (110, 208, 110, 210)]
+    )
+
+
+def test_a_plain_border_stays_exact_however_far_out(monkeypatch):
+    selection = masked(10, 10, [(5, 6)])
+    assert selection.edges_within(0, 0, 50, 50, zoom=0.1) == selection.edges_within(0, 0, 50, 50)
+    assert Selection(3, 3, 9, 9).edges_within(0, 0, 50, 50, zoom=0.1) == Selection(3, 3, 9, 9).edges

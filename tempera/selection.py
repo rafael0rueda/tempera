@@ -68,6 +68,63 @@ def _crop_mask(mask: cairo.ImageSurface, x: int, y: int, width: int, height: int
 
 # How many rows of the image share a bucket of a selection's edges.
 EDGE_BAND = 128
+# A border of more edges than this is drawn only as finely as the screen shows
+# it once the picture is zoomed out: see Selection.edges_within().
+COARSE_ABOVE = 20_000
+
+
+def _trace(row_at, width: int, height: int) -> list[tuple[int, int, int, int]]:
+    """The border of the pixels a mask covers, as horizontal and vertical lines
+    (x1, y1, x2, y2) along their edges. `row_at` gives a row as a byte for each
+    pixel: 1 inside, 0 outside."""
+    edges = []
+    # Upright lines running down from the row they started on, by column.
+    running: dict[int, int] = {}
+    previous = bytes(width)
+    for row in range(height + 1):
+        current = row_at(row) if row < height else bytes(width)
+        # Across: wherever this row and the one above differ.
+        changed = (int.from_bytes(previous, "little") ^ int.from_bytes(current, "little")).to_bytes(
+            width, "little"
+        )
+        start = changed.find(1)
+        while start >= 0:
+            end = changed.find(0, start)
+            end = width if end < 0 else end
+            edges.append((start, row, end, row))
+            start = changed.find(1, end)
+        # Up and down: wherever a pixel differs from the one to its left.
+        padded = b"\x00" + current + b"\x00"
+        steps = (int.from_bytes(padded[:-1], "little") ^ int.from_bytes(padded[1:], "little")).to_bytes(
+            width + 1, "little"
+        )
+        columns = set()
+        column = steps.find(1)
+        while column >= 0:
+            columns.add(column)
+            column = steps.find(1, column + 1)
+        for column in [column for column in running if column not in columns]:
+            edges.append((column, running.pop(column), column, row))
+        for column in columns:
+            running.setdefault(column, row)
+        previous = current
+    return edges
+
+
+def _banded(edges) -> dict[int, list[tuple[int, int, int, int]]]:
+    """Edges by the band of rows they lie in, an upright one cut where it
+    crosses from one band to the next, so those in view are quick to find."""
+    bands: dict[int, list[tuple[int, int, int, int]]] = {}
+    for x1, y1, x2, y2 in edges:
+        if y1 == y2:
+            bands.setdefault(y1 // EDGE_BAND, []).append((x1, y1, x2, y2))
+            continue
+        top = y1
+        while top < y2:
+            bottom = min(y2, (top // EDGE_BAND + 1) * EDGE_BAND)
+            bands.setdefault(top // EDGE_BAND, []).append((x1, top, x2, bottom))
+            top = bottom
+    return bands
 
 
 @dataclass
@@ -87,6 +144,9 @@ class Selection:
     mask: cairo.ImageSurface | None = field(default=None, compare=False)
     # The outline as drawn, in image pixels, for the marching ants.
     outline: tuple[Point, ...] | None = field(default=None, compare=False)
+    # The border as it is drawn zoomed out, for each size of square it has
+    # been worked out in: see _coarse_bands().
+    _coarse: dict = field(default_factory=dict, compare=False, repr=False)
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Selection):
@@ -166,68 +226,73 @@ class Selection:
             return [(x, y, x + width, y), (x + width, y, x + width, y + height),
                     (x, y + height, x + width, y + height), (x, y, x, y + height)]
         self.mask.flush()
-        data, stride = self.mask.get_data(), self.mask.get_stride()
-        width, height = self.width, self.height
+        data, stride, width = self.mask.get_data(), self.mask.get_stride(), self.width
         inside = bytes(0 if value == 0 else 1 for value in range(256))
-        edges = []
-        # Upright lines running down from the row they started on, by column.
-        running: dict[int, int] = {}
-        previous = bytes(width)
-        for row in range(height + 1):
-            current = (
-                data[row * stride:row * stride + width].tobytes().translate(inside)
-                if row < height
-                else bytes(width)
+        return [
+            (self.x + x1, self.y + y1, self.x + x2, self.y + y2)
+            for x1, y1, x2, y2 in _trace(
+                lambda row: data[row * stride:row * stride + width].tobytes().translate(inside),
+                width,
+                self.height,
             )
-            # Across: wherever this row and the one above differ.
-            changed = (int.from_bytes(previous, "little") ^ int.from_bytes(current, "little")).to_bytes(
-                width, "little"
-            )
-            start = changed.find(1)
-            while start >= 0:
-                end = changed.find(0, start)
-                end = width if end < 0 else end
-                edges.append((self.x + start, self.y + row, self.x + end, self.y + row))
-                start = changed.find(1, end)
-            # Up and down: wherever a pixel differs from the one to its left.
-            padded = b"\x00" + current + b"\x00"
-            steps = (int.from_bytes(padded[:-1], "little") ^ int.from_bytes(padded[1:], "little")).to_bytes(
-                width + 1, "little"
-            )
-            columns = set()
-            column = steps.find(1)
-            while column >= 0:
-                columns.add(column)
-                column = steps.find(1, column + 1)
-            for column in [column for column in running if column not in columns]:
-                edges.append((self.x + column, self.y + running.pop(column), self.x + column, self.y + row))
-            for column in columns:
-                running.setdefault(column, row)
-            previous = current
-        return edges
+        ]
 
     @cached_property
     def _edge_bands(self) -> dict[int, list[tuple[int, int, int, int]]]:
-        """The edges by the band of rows they lie in, an upright one cut where it
-        crosses from one band to the next, so those in view are quick to find."""
-        bands: dict[int, list[tuple[int, int, int, int]]] = {}
-        for x1, y1, x2, y2 in self.edges:
-            if y1 == y2:
-                bands.setdefault(y1 // EDGE_BAND, []).append((x1, y1, x2, y2))
-                continue
-            top = y1
-            while top < y2:
-                bottom = min(y2, (top // EDGE_BAND + 1) * EDGE_BAND)
-                bands.setdefault(top // EDGE_BAND, []).append((x1, top, x2, bottom))
-                top = bottom
+        return _banded(self.edges)
+
+    def _coarse_bands(self, step: int) -> dict[int, list[tuple[int, int, int, int]]]:
+        """The border of the selection as it is in squares of `step` pixels a side,
+        each inside if any pixel of it is: what there is to see of a speckled
+        one with the picture shrunk that far."""
+        bands = self._coarse.get(step)
+        if bands is not None:
+            return bands
+        self.mask.flush()
+        data, stride = self.mask.get_data(), self.mask.get_stride()
+        width, height = self.width, self.height
+        across = -(-width // step)
+        inside = bytes(0 if value == 0 else 1 for value in range(256))
+
+        def squares(row: int) -> bytes:
+            # The rows of the square laid over each other, then its columns:
+            # as numbers, so that no pixel is looked at from Python.
+            rows = 0
+            for y in range(row * step, min(height, (row + 1) * step)):
+                rows |= int.from_bytes(data[y * stride:y * stride + width], "little")
+            covered = rows.to_bytes(width, "little")
+            columns = 0
+            for offset in range(step):
+                columns |= int.from_bytes(covered[offset::step], "little")
+            return columns.to_bytes(across, "little").translate(inside)
+
+        edges = [
+            (
+                self.x + min(x1 * step, width),
+                self.y + min(y1 * step, height),
+                self.x + min(x2 * step, width),
+                self.y + min(y2 * step, height),
+            )
+            for x1, y1, x2, y2 in _trace(squares, across, -(-height // step))
+        ]
+        bands = self._coarse[step] = _banded(edges)
         return bands
 
     def edges_within(
-        self, left: float, top: float, right: float, bottom: float
+        self, left: float, top: float, right: float, bottom: float, zoom: float = 1.0
     ) -> list[tuple[int, int, int, int]]:
         """The edges that reach into one rectangle of the image: all that needs drawing
-        when only that much is in view. A wand's pick on a photo can have a million."""
+        when only that much is in view. A wand's pick on a photo can have a million.
+
+        With the picture shrunk by `zoom`, more of them come into view than
+        there are pixels on screen to draw them on; past COARSE_ABOVE, the
+        border is then followed only as closely as the screen can show it.
+        """
         bands = self._edge_bands
+        if zoom < 1 and self.mask is not None and len(self.edges) > COARSE_ABOVE:
+            # A power of two, so that zooming smoothly works out only a few.
+            step = 1 << math.ceil(math.log2(1 / zoom))
+            bands = self._coarse_bands(step)
         found = []
         for band in range(max(0, int(top) // EDGE_BAND), int(bottom) // EDGE_BAND + 1):
             for edge in bands.get(band, ()):
