@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import ctypes
+import itertools
 import math
 from dataclasses import dataclass
 
@@ -31,6 +32,9 @@ MAX_LAYERS = 100
 LAYER_BUDGET = 4 * 1024 * 1024 * 1024
 WHITE = (1.0, 1.0, 1.0, 1.0)
 TRANSPARENT = (0.0, 0.0, 0.0, 0.0)
+
+# Numbers for the states layers' pixels pass through: see Layer.revision.
+_revisions = itertools.count(1)
 
 _libc = ctypes.CDLL(None)
 _libc.memcmp.restype = ctypes.c_int
@@ -216,7 +220,7 @@ def flatten(
 class Layer:
     """One sheet of the picture: its pixels, and how they show over the sheets beneath."""
 
-    __slots__ = ("surface", "name", "visible", "opacity")
+    __slots__ = ("surface", "name", "visible", "opacity", "revision")
 
     def __init__(
         self, surface: cairo.ImageSurface, name: str, visible: bool = True, opacity: float = 1.0
@@ -225,6 +229,14 @@ class Layer:
         self.name = name
         self.visible = visible
         self.opacity = opacity
+        # A number no other state of any layer's pixels has had, given anew
+        # each time a change to them lands, so that a copy kept of them can
+        # tell whether it is still good.
+        self.revision = next(_revisions)
+
+    def touch(self) -> None:
+        """Note that the pixels are no longer what they were."""
+        self.revision = next(_revisions)
 
     @property
     def shows(self) -> bool:
@@ -432,6 +444,11 @@ class Document(GObject.Object):
         return self.file.get_basename() if self.file else _("Untitled")
 
     @property
+    def changing(self) -> bool:
+        """Whether a change to the current layer is under way, begun but not yet landed."""
+        return self._before is not None
+
+    @property
     def modified(self) -> bool:
         return self._saved_depth != len(self._undo)
 
@@ -474,6 +491,8 @@ class Document(GObject.Object):
     def _changed(self, damage: Damage, layers: bool = False) -> None:
         """Tell the views the image changed, and where."""
         self.damage = damage
+        for layer in self.layers if damage is None else {layer for layer, _rect in damage}:
+            layer.touch()
         self.emit("content-changed")
         if layers:
             self.emit("layers-changed")
@@ -564,6 +583,9 @@ class Document(GObject.Object):
         step = source.pop()
         target.append(step.apply(self))
         if isinstance(step, StackChange):
+            # Any of them may have its old surface back.
+            for layer in self.layers:
+                layer.touch()
             self._changed([], layers=True)
         else:
             self._changed(step.damage())

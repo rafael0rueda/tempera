@@ -16,6 +16,7 @@ from pixels import paint_pixel, pixel_at
 
 RED = (1.0, 0.0, 0.0, 1.0)
 WHITE = (1.0, 1.0, 1.0, 1.0)
+BLUE = (0.0, 0.0, 1.0, 1.0)
 
 
 def save_and_wait(slot, image, info=None):
@@ -138,6 +139,139 @@ def test_the_layers_come_back_as_they_were(private_recovery_dir):
     assert pixel_at(loaded.layers[1].surface, 1, 1) == (255, 0, 0, 255)
     assert pixel_at(loaded.layers[1].surface, 2, 2)[3] == 0
     leftover.discard()
+
+
+def painted(document, color):
+    """Paint a pixel of the current layer as one step, the way a tool does."""
+    document.begin_change()
+    paint_pixel(document.surface, 1, 1, color)
+    document.commit_change()
+
+
+def encoded_by(monkeypatch):
+    """The surfaces turned into PNG from here on."""
+    from tempera import openraster
+
+    encoded, real = [], openraster._png
+    monkeypatch.setattr(openraster, "_png", lambda surface: (encoded.append(surface), real(surface))[1])
+    return encoded
+
+
+def recovered(slot):
+    crash(slot)
+    [leftover] = recovery.find_leftovers()
+    try:
+        return leftover.load()
+    finally:
+        leftover.discard()
+
+
+def test_only_the_layers_that_changed_are_encoded_again(private_recovery_dir, monkeypatch):
+    document = Document(new_surface(4, 4, WHITE))
+    document.add_layer()
+    painted(document, RED)
+    slot = recovery.RecoverySlot()
+    encoded = encoded_by(monkeypatch)
+    save_and_wait(slot, document)
+    assert len(encoded) == 2
+
+    document.select_layer(0)
+    painted(document, BLUE)
+    save_and_wait(slot, document)
+    assert len(encoded) == 3
+
+    # Renamed, faded or moved, a layer's pixels are still the ones on disk.
+    document.rename_layer(1, "Ink")
+    document.set_layer_opacity(1, 0.5)
+    document.add_layer()
+    document.move_layer(2, 0)
+    save_and_wait(slot, document)
+    assert len(encoded) == 4
+
+    loaded = recovered(slot)
+    assert [layer.name for layer in loaded.layers] == ["Ink", "Background", "Layer 3"]
+    assert pixel_at(loaded.layers[0].surface, 1, 1) == (255, 0, 0, 255)
+    assert pixel_at(loaded.layers[1].surface, 1, 1) == (0, 0, 255, 255)
+    assert loaded.layers[0].opacity == 0.5
+
+
+def test_a_layer_put_back_by_undo_is_written_as_it_now_is(private_recovery_dir):
+    document = Document(new_surface(4, 4, WHITE))
+    painted(document, RED)
+    slot = recovery.RecoverySlot()
+    save_and_wait(slot, document)
+    document.undo()
+    save_and_wait(slot, document)
+    document.flip(True)
+    save_and_wait(slot, document)
+    document.undo()
+    document.redo()
+    document.undo()
+    save_and_wait(slot, document)
+
+    loaded = recovered(slot)
+    assert pixel_at(loaded.surface, 1, 1) == (255, 255, 255, 255)
+
+
+def test_paint_of_a_stroke_under_way_is_not_taken_for_the_layer_as_it_stays(private_recovery_dir):
+    document = Document(new_surface(4, 4, WHITE))
+    slot = recovery.RecoverySlot()
+    save_and_wait(slot, document)
+    document.begin_change()
+    paint_pixel(document.surface, 1, 1, RED)
+    save_and_wait(slot, document)
+    # The stroke comes to nothing, as one a tool takes back does.
+    paint_pixel(document.surface, 1, 1, WHITE)
+    document.finish_change()
+    document.add_layer()
+    save_and_wait(slot, document)
+
+    loaded = recovered(slot)
+    assert pixel_at(loaded.layers[0].surface, 1, 1) == (255, 255, 255, 255)
+
+
+def test_a_copy_asked_for_while_another_is_written_finds_its_layers(private_recovery_dir):
+    document = Document(new_surface(200, 200, WHITE))
+    document.add_layer()
+    painted(document, RED)
+    slot = recovery.RecoverySlot()
+    save_and_wait(slot, document)
+
+    heard = []
+    document.add_layer()
+    document.move_layer(2, 0)
+    slot.save(document, {"title": "T"}, heard.append)
+    document.select_layer(1)
+    painted(document, BLUE)
+    document.move_layer(2, 0)
+    slot.save(document, {"title": "T"}, heard.append)
+    assert wait_until(lambda: len(heard) == 2)
+    assert heard == [None, None]
+
+    loaded = recovered(slot)
+    assert [layer.name for layer in loaded.layers] == ["Layer 2", "Layer 3", "Background"]
+    assert pixel_at(loaded.layers[0].surface, 1, 1) == (255, 0, 0, 255)
+    assert pixel_at(loaded.layers[2].surface, 1, 1) == (0, 0, 255, 255)
+
+
+def test_a_copy_gone_from_the_disk_is_written_whole_the_next_time(private_recovery_dir):
+    document = Document(new_surface(4, 4, WHITE))
+    document.add_layer()
+    slot = recovery.RecoverySlot()
+    save_and_wait(slot, document)
+    slot.image_path.unlink()
+
+    heard = []
+    painted(document, RED)
+    slot.save(document, {"title": "T"}, heard.append)
+    assert wait_until(lambda: heard)
+    assert heard[0] is not None
+    slot.save(document, {"title": "T"}, heard.append)
+    assert wait_until(lambda: len(heard) == 2)
+    assert heard[1] is None
+
+    loaded = recovered(slot)
+    assert pixel_at(loaded.layers[1].surface, 1, 1) == (255, 0, 0, 255)
 
 
 def test_a_copy_tempera_1_left_comes_back_too(private_recovery_dir):
