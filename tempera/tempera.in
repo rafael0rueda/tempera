@@ -7,6 +7,7 @@ import sys
 sys.path.insert(1, '@PYTHON_DIR@')
 os.environ.setdefault('TEMPERA_DATA_DIR', '@PKGDATADIR@')
 os.environ.setdefault('TEMPERA_LOCALE_DIR', '@LOCALEDIR@')
+os.environ.setdefault('TEMPERA_NATIVE', '@NATIVE@')
 
 from tempera.main import main
 

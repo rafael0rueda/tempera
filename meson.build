@@ -1,9 +1,10 @@
 # SPDX-FileCopyrightText: 2026 Rafael Rueda
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-project('tempera',
+project('tempera', 'c',
   version: '2.1.1',
   meson_version: '>= 0.62.0',
+  default_options: ['c_std=c11', 'warning_level=2'],
 )
 
 python = import('python').find_installation('python3')
@@ -15,7 +16,9 @@ bindir = prefix / get_option('bindir')
 datadir = prefix / get_option('datadir')
 pkgdatadir = datadir / meson.project_name()
 localedir = prefix / get_option('localedir')
+pkglibdir = prefix / get_option('libdir') / meson.project_name()
 
+subdir('native')
 subdir('tempera')
 subdir('data')
 subdir('po')

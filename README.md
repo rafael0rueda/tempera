@@ -50,7 +50,7 @@ Fedora Workstation 43 or newer (Tempera needs libadwaita 1.8):
 sudo dnf install python3-gobject python3-cairo gtk4 libadwaita
 ```
 
-To build and install, also: `sudo dnf install meson ninja-build`
+To build and install, also: `sudo dnf install meson ninja-build gcc`
 
 ## Running from source
 
@@ -61,6 +61,11 @@ python3 -m tempera
 ```
 
 Optionally pass an image to open: `python3 -m tempera picture.png`
+
+Filling and the magic wand are some ten times quicker on photos with a small C helper,
+which a meson build compiles and installs. Tempera works the same without it, so from
+source it is optional; `build-aux/build_native.sh` compiles it next to the Python (it
+needs `gcc`), and `TEMPERA_NATIVE=off` runs without it.
 
 ## Running the tests
 
@@ -75,6 +80,9 @@ python3 -m pytest
 ```
 
 From a meson build directory, `meson test -C builddir` runs the same suite.
+
+The tests that hold the C helper and the Python to the same answers are skipped until
+the helper is built; set `TEMPERA_REQUIRE_NATIVE=1` to have its absence fail instead.
 
 GitHub Actions runs the same suite on Fedora for every push and pull request,
 validates the desktop entry and metainfo, and builds the Flatpak

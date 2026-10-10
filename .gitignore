@@ -15,3 +15,6 @@ po/*.mo
 # The design handoff the layout was built from; not part of the app
 design_handoff_tempera_redesign/
 Tempera paint application design.zip
+
+# The C helper, compiled into the source tree by build-aux/build_native.sh
+tempera/tempera_native.so

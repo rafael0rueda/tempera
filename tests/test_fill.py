@@ -298,8 +298,10 @@ def test_a_colour_within_the_tolerance_of_the_one_clicked_still_fills():
 def test_filling_with_the_colour_clicked_evens_out_the_near_matches():
     surface = new_surface(6, 3, WHITE)
     paint_pixel(surface, 4, 1, (0.98, 0.98, 0.98, 1.0))
-    # Only the row that had something to even out counts as painted.
-    assert flood_fill(surface, 0, 0, rgba(1, 1, 1)) == (0, 1, 6, 1)
+    # Only the row that had something to even out counts as painted: all of
+    # it, or with the C helper just the pixel that changed.
+    left, top, width, height = flood_fill(surface, 0, 0, rgba(1, 1, 1))
+    assert (top, height) == (1, 1) and left <= 4 < left + width
     assert pixel_at(surface, 4, 1) == (255, 255, 255, 255)
 
 

@@ -9,6 +9,7 @@ from functools import cached_property
 
 import cairo
 
+from . import native
 from .document import crop_surface, keep_inside
 from .regions import flood_spans, spans_mask
 
@@ -71,6 +72,10 @@ EDGE_BAND = 128
 # A border of more edges than this is drawn only as finely as the screen shows
 # it once the picture is zoomed out: see Selection.edges_within().
 COARSE_ABOVE = 20_000
+# With the C helper, such a border is traced in tiles this many pixels a side
+# as they come into view, and this many are kept before starting over.
+EDGE_TILE = EDGE_BAND
+EDGE_TILES_KEPT = 256
 
 
 def _trace(row_at, width: int, height: int) -> list[tuple[int, int, int, int]]:
@@ -147,6 +152,10 @@ class Selection:
     # The border as it is drawn zoomed out, for each size of square it has
     # been worked out in: see _coarse_bands().
     _coarse: dict = field(default_factory=dict, compare=False, repr=False)
+    # The edges traced a tile at a time, and those of the view last asked
+    # for with which tiles it was: see _edges_in_view().
+    _tiles: dict = field(default_factory=dict, compare=False, repr=False)
+    _in_view: tuple | None = field(default=None, compare=False, repr=False)
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Selection):
@@ -206,6 +215,13 @@ class Selection:
         if not (0 <= px < surface.get_width() and 0 <= py < surface.get_height()):
             return None
         surface.flush()
+        if native.available():
+            mask, rect, count = native.flood(surface, px, py, tolerance)
+            if count == rect[2] * rect[3]:
+                return cls(*rect)
+            if rect[2:] != (surface.get_width(), surface.get_height()):
+                mask = _crop_mask(mask, *rect)
+            return cls(*rect, mask)
         spans = list(flood_spans(surface, px, py, tolerance))
         rect, mask = spans_mask(spans)
         if sum(end - start for _row, start, end in spans) == rect[2] * rect[3]:
@@ -225,6 +241,9 @@ class Selection:
             x, y, width, height = self.rect
             return [(x, y, x + width, y), (x + width, y, x + width, y + height),
                     (x, y + height, x + width, y + height), (x, y, x, y + height)]
+        if native.available():
+            whole = (0, 0, self.width, self.height)
+            return native.edges(self.mask, self.width, self.height, whole, EDGE_BAND, (self.x, self.y))
         self.mask.flush()
         data, stride, width = self.mask.get_data(), self.mask.get_stride(), self.width
         inside = bytes(0 if value == 0 else 1 for value in range(256))
@@ -240,6 +259,57 @@ class Selection:
     @cached_property
     def _edge_bands(self) -> dict[int, list[tuple[int, int, int, int]]]:
         return _banded(self.edges)
+
+    @cached_property
+    def _edge_count(self) -> int:
+        """How many edges the border has, near enough; counted without keeping them
+        when the C helper is there to do it."""
+        if self.mask is not None and native.available():
+            return native.count_edges(self.mask, self.width, self.height)
+        return len(self.edges)
+
+    @property
+    def _speckled(self) -> bool:
+        """Whether the border has too many edges to draw, or even to keep, all of."""
+        return self.mask is not None and self._edge_count > COARSE_ABOVE
+
+    def _edges_in_view(
+        self, left: float, top: float, right: float, bottom: float
+    ) -> list[tuple[int, int, int, int]]:
+        """The edges in one rectangle of the image, traced there and then by the C
+        helper, a tile at a time: a million of them as Python objects take
+        hundreds of megabytes, and a moment to list that a view's worth does not.
+        A view scrolled on traces only the tiles that came into it."""
+        columns = range(
+            max(0, int(left - self.x) // EDGE_TILE),
+            min(-(-self.width // EDGE_TILE), -(-math.ceil(right - self.x) // EDGE_TILE)),
+        )
+        rows = range(
+            max(0, int(top - self.y) // EDGE_TILE),
+            min(-(-self.height // EDGE_TILE), -(-math.ceil(bottom - self.y) // EDGE_TILE)),
+        )
+        view = (columns, rows)
+        if self._in_view is not None and self._in_view[0] == view:
+            return self._in_view[1]
+        if len(self._tiles) > EDGE_TILES_KEPT:
+            self._tiles.clear()
+        found = []
+        for row in rows:
+            for column in columns:
+                tile = self._tiles.get((column, row))
+                if tile is None:
+                    x, y = column * EDGE_TILE, row * EDGE_TILE
+                    tile = self._tiles[(column, row)] = native.edges(
+                        self.mask,
+                        self.width,
+                        self.height,
+                        (x, y, x + EDGE_TILE, y + EDGE_TILE),
+                        EDGE_BAND,
+                        (self.x, self.y),
+                    )
+                found += tile
+        self._in_view = (view, found)
+        return found
 
     def _coarse_bands(self, step: int) -> dict[int, list[tuple[int, int, int, int]]]:
         """The border of the selection as it is in squares of `step` pixels a side,
@@ -288,11 +358,14 @@ class Selection:
         there are pixels on screen to draw them on; past COARSE_ABOVE, the
         border is then followed only as closely as the screen can show it.
         """
-        bands = self._edge_bands
-        if zoom < 1 and self.mask is not None and len(self.edges) > COARSE_ABOVE:
+        if self._speckled and zoom < 1:
             # A power of two, so that zooming smoothly works out only a few.
             step = 1 << math.ceil(math.log2(1 / zoom))
             bands = self._coarse_bands(step)
+        elif self._speckled and native.available():
+            return self._edges_in_view(left, top, right, bottom)
+        else:
+            bands = self._edge_bands
         found = []
         for band in range(max(0, int(top) // EDGE_BAND), int(bottom) // EDGE_BAND + 1):
             for edge in bands.get(band, ()):
@@ -302,7 +375,12 @@ class Selection:
 
     def prepare(self) -> None:
         """Work out the edges now, so the first frame that draws them need not: worth
-        doing off the UI thread for a selection picked out pixel by pixel."""
+        doing off the UI thread for a selection picked out pixel by pixel.
+
+        With the C helper, a border of very many edges is only counted: it is
+        then traced a view at a time, as it is drawn."""
+        if self._speckled and native.available():
+            return
         self._edge_bands
 
     def contains(self, x: float, y: float) -> bool:
