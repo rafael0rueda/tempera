@@ -18,11 +18,13 @@ ever changed by saving it.
 from __future__ import annotations
 
 import fcntl
+import itertools
 import json
 import os
 import threading
 import time
 import uuid
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -96,7 +98,13 @@ class RecoverySlot:
         self._generation = 0
         self._writing = False
         # The newest copy asked for while another was being written, and who to tell.
-        self._waiting: tuple[tuple[list[Layer], dict], object] | None = None
+        self._waiting: tuple[tuple, object] | None = None
+        # The layers the copy on disk holds, each with the revision of it that
+        # was written and the name its PNG has in the file. One that has not
+        # changed since is taken from there for the next copy, rather than
+        # copied and encoded again: most changes touch one layer of several.
+        self._kept: dict[Layer, tuple[int, str]] = {}
+        self._names = itertools.count()
 
     @property
     def image_path(self) -> Path:
@@ -125,7 +133,23 @@ class RecoverySlot:
                 done(_("the folder for it cannot be written to"))
             return
         # Copied here, so drawing on can carry on while the copy is written.
-        layers = [layer.copy() for layer in document.layers]
+        layers, names, reused = [], [], []
+        for layer in document.layers:
+            revision, name = self._kept.get(layer, (None, ""))
+            # Not in the middle of a stroke, whose paint is on the layer
+            # before the layer is told it has changed.
+            if revision == layer.revision and not document.changing:
+                # Only how it shows: its pixels are in the copy on disk.
+                layers.append(Layer(None, layer.name, layer.visible, layer.opacity))
+                reused.append(True)
+            else:
+                layers.append(layer.copy())
+                name = f"data/layer-{next(self._names)}.png"
+                reused.append(False)
+            names.append(name)
+        kept = {} if document.changing else {
+            layer: (layer.revision, name) for layer, name in zip(document.layers, names)
+        }
         info = dict(
             info,
             version=FORMAT_VERSION,
@@ -134,7 +158,7 @@ class RecoverySlot:
             height=document.height,
             current=document.current,
         )
-        request = (layers, info)
+        request = (layers, info, names, reused, kept)
         if self._writing:
             self._waiting = (request, done)
             return
@@ -143,17 +167,24 @@ class RecoverySlot:
     def _start(self, request, done) -> None:
         self._writing = True
         generation = self._generation
-        layers, info = request
+        layers, info, names, reused, kept = request
         error: str | None = None
 
         def write() -> None:
             nonlocal error
             try:
+                members = [(name, None) for name in names]
+                if any(reused):
+                    with zipfile.ZipFile(self.image_path) as last:
+                        members = [
+                            (name, last.read(name) if again else None)
+                            for name, again in zip(names, reused)
+                        ]
                 # The image first: a description on disk means its image is complete.
                 _write_private(
                     self.image_path,
                     lambda stream: write_openraster(
-                        stream, layers, info["width"], info["height"], complete=False
+                        stream, layers, info["width"], info["height"], complete=False, members=members
                     ),
                 )
                 _write_private(
@@ -167,11 +198,19 @@ class RecoverySlot:
             GLib.idle_add(finished)
 
         def finished() -> bool:
+            nonlocal error
             self._writing = False
             if generation != self._generation:
                 # Saved, discarded or closed while this was being written; a
                 # closed window has let go of its lock file too.
                 _remove(self.directory, self.id, keep_lock=self._lock is not None)
+                # Nor does it matter how a copy nobody wants any more came out.
+                error = None
+            elif error is None:
+                self._kept = kept
+            else:
+                # Whatever is on disk now, the next copy is written whole.
+                self._kept = {}
             if done is not None:
                 done(error)
             if self._waiting is not None:
@@ -185,6 +224,7 @@ class RecoverySlot:
         """Forget the copy: the image was saved, or its changes thrown away."""
         self._generation += 1
         self._waiting = None
+        self._kept = {}
         if self._lock is not None:
             _remove(self.directory, self.id, keep_lock=True)
 

@@ -282,8 +282,8 @@ def format_for(file: Gio.File) -> str | None:
 def image_to_save(document: Document, file: Gio.File) -> tuple[object, str]:
     """What to write and the format to write it in, or raise if it cannot be done.
 
-    For OpenRaster that is copies of the layers; for the other formats, the
-    picture as it shows, as a pixbuf.
+    For OpenRaster that is copies of the layers; for PNG the picture as it
+    shows, as a surface; and for the other formats, the same as a pixbuf.
 
     Taken on the main thread, before the encoding goes off to a worker: it is a
     copy, so painting on while the file is written cannot change what is saved.
@@ -304,6 +304,10 @@ def image_to_save(document: Document, file: Gio.File) -> tuple[object, str]:
     if image_format == LAYERED_FORMAT:
         layers = [layer.copy() for layer in document.layers]
         return (layers, document.width, document.height), image_format
+    if image_format == "png":
+        # Cairo writes this one itself: in half the time GdkPixbuf's encoder
+        # takes for a photo, and without a second copy of it made here first.
+        return document.flattened(), image_format
     if image_format in FLATTEN_FORMATS:
         # These formats have no alpha channel, so composite onto white first.
         flattened = new_surface(document.width, document.height)
@@ -330,6 +334,13 @@ def encode_image(picture, image_format: str, quality: int) -> GLib.Bytes:
     if image_format == LAYERED_FORMAT:
         stream = io.BytesIO()
         write_openraster(stream, *picture)
+        return GLib.Bytes.new(stream.getvalue())
+    if image_format == "png":
+        stream = io.BytesIO()
+        try:
+            picture.write_to_png(stream)
+        except (cairo.Error, MemoryError) as error:
+            raise image_error(str(error)) from None
         return GLib.Bytes.new(stream.getvalue())
     pixbuf = picture
     options = (["quality"], [str(quality)]) if image_format == "jpeg" else ([], [])

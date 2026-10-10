@@ -57,6 +57,8 @@ class RenderMixin:
     def _init_render(self) -> None:
         # Each layer's textures, for as long as the layer is in the picture.
         self._tiles: dict[Layer, ImageTiles] = {}
+        # A turned or skewed paste's pixels, with the surface they are of.
+        self._turned: tuple[cairo.ImageSurface, Gdk.Texture] | None = None
 
     def _layer_tiles(self, layer: Layer) -> ImageTiles:
         tiles = self._tiles.get(layer)
@@ -177,6 +179,7 @@ class RenderMixin:
                     self._snapshot_cairo(snapshot, visible, self._draw_bottom_extras)
             if current:
                 self._snapshot_cairo(snapshot, visible, self._draw_layer_extras)
+                self._snapshot_turned_paste(snapshot)
             if see_through:
                 snapshot.pop()
 
@@ -203,6 +206,43 @@ class RenderMixin:
                 mask_texture(paste.source_mask), Gsk.ScalingFilter.NEAREST, bounds
             )
         snapshot.pop()
+
+    def _snapshot_turned_paste(self, snapshot: Gtk.Snapshot) -> None:
+        """A paste that is turned or skewed, as a texture the GPU turns and smooths.
+
+        Cairo would resample every pixel of it on each frame it is dragged
+        through: 22 ms for six megapixels zoomed out, more than a frame has.
+        Upright, a paste is a plain copy, which cairo draws quickly and exactly.
+        """
+        paste = self._paste
+        if paste is None or not paste.transformed:
+            self._turned = None
+            return
+        surface = paste.surface
+        if self._turned is None or self._turned[0] is not surface:
+            surface.flush()
+            self._turned = (
+                surface,
+                surface_texture(surface, 0, 0, surface.get_width(), surface.get_height()),
+            )
+        zoom, matrix = self.zoom, paste.matrix()
+        shrunk = zoom * min(abs(paste.scale_x), abs(paste.scale_y)) < 1
+        snapshot.save()
+        snapshot.scale(zoom, zoom)
+        # Said to be flat, which a matrix of sixteen numbers is not known to
+        # be: GTK's software renderer draws nothing under one of those.
+        snapshot.transform(
+            Gsk.Transform.new().matrix_2d(
+                matrix.xx, matrix.yx, matrix.xy, matrix.yy, matrix.x0, matrix.y0
+            )
+        )
+        snapshot.scale(paste.scale_x, paste.scale_y)
+        snapshot.append_scaled_texture(
+            self._turned[1],
+            Gsk.ScalingFilter.TRILINEAR if shrunk else Gsk.ScalingFilter.LINEAR,
+            _rect(0, 0, surface.get_width(), surface.get_height()),
+        )
+        snapshot.restore()
 
     def _snapshot_cairo(
         self, snapshot: Gtk.Snapshot, visible: tuple[float, float, float, float], draw
@@ -273,7 +313,8 @@ class RenderMixin:
             self.active_tool.draw_preview(cr, context)
             cr.restore()
 
-        if self._paste is not None:
+        if self._paste is not None and not self._paste.transformed:
+            # Turned, it is drawn as a texture: see _snapshot_turned_paste().
             self._paste.paint(cr)
 
         text = self._text
@@ -312,8 +353,9 @@ class RenderMixin:
                 cr.restore()
             elif selection.mask is not None:
                 # Picked out pixel by pixel: the ants follow the pixels' edges.
-                # Only those in view: a pick on a photo has far more than the screen shows.
-                draw_edges_marquee(cr, selection.edges_within(*cr.clip_extents()))
+                # Only those in view: a pick on a photo has far more than the screen
+                # shows, and zoomed out more than it has pixels to show them on.
+                draw_edges_marquee(cr, selection.edges_within(*cr.clip_extents(), zoom=self.zoom))
             else:
                 draw_marquee(cr, *selection.rect)
 

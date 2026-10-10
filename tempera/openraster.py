@@ -69,12 +69,21 @@ def _thumbnail(picture: cairo.ImageSurface) -> cairo.ImageSurface:
 
 
 def write_openraster(
-    stream, layers: list[Layer], width: int, height: int, complete: bool = True
+    stream,
+    layers: list[Layer],
+    width: int,
+    height: int,
+    complete: bool = True,
+    members: list[tuple[str, bytes | None]] | None = None,
 ) -> None:
     """Write the layers, listed bottom first, as an OpenRaster file.
 
     Without `complete`, the flattened picture and the thumbnail other programs
     look for are left out: a copy Tempera keeps for itself does not need them.
+
+    `members` gives each layer the name its PNG goes under in the archive, and
+    the PNG itself where there is one already, which is then written as it is
+    and the layer's surface not looked at.
     """
     image = ElementTree.Element("image", version="0.0.6", w=str(width), h=str(height))
     stack = ElementTree.SubElement(image, "stack")
@@ -83,7 +92,7 @@ def write_openraster(
         archive.writestr("mimetype", MIMETYPE, compress_type=zipfile.ZIP_STORED)
         for index in reversed(range(len(layers))):
             layer = layers[index]
-            source = f"data/layer{index}.png"
+            source, png = members[index] if members is not None else (f"data/layer{index}.png", None)
             ElementTree.SubElement(
                 stack,
                 "layer",
@@ -95,7 +104,9 @@ def write_openraster(
                 visibility="visible" if layer.visible else "hidden",
             )
             # PNG is compressed already.
-            archive.writestr(source, _png(layer.surface), compress_type=zipfile.ZIP_STORED)
+            archive.writestr(
+                source, _png(layer.surface) if png is None else png, compress_type=zipfile.ZIP_STORED
+            )
         archive.writestr(
             "stack.xml", ElementTree.tostring(image, encoding="UTF-8", xml_declaration=True)
         )
