@@ -14,6 +14,7 @@ python.install_sources(
     'i18n.py',
     'interface_size.py',
     'main.py',
+    'native.py',
     'openraster.py',
     'pixbufs.py',
     'preferences.py',
@@ -98,6 +99,7 @@ launcher.set('PYTHON', python.full_path())
 launcher.set('PYTHON_DIR', python.get_install_dir())
 launcher.set('PKGDATADIR', pkgdatadir)
 launcher.set('LOCALEDIR', localedir)
+launcher.set('NATIVE', pkglibdir / 'tempera_native.so')
 
 configure_file(
   input: 'tempera.in',

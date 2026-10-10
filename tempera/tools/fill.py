@@ -6,6 +6,7 @@ from __future__ import annotations
 import cairo
 from gi.repository import Gdk
 
+from .. import native
 from ..i18n import C_
 from ..regions import flood_spans, premultiplied, target_at
 from .base import Tool, ToolContext
@@ -18,7 +19,8 @@ def flood_fill(
 ) -> tuple[int, int, int, int] | None:
     """Scanline flood fill over the surface's ARGB32 buffer.
 
-    Returns the rectangle it painted over, or None when it changed nothing.
+    Returns a rectangle holding everything it painted, or None when it changed
+    nothing. The C helper does it when there is one: see native.py.
     """
     width, height = surface.get_width(), surface.get_height()
     if not (0 <= x < width and 0 <= y < height):
@@ -31,6 +33,10 @@ def flood_fill(
     # it is painted, so it ends whatever the colour.
     if tolerance == 0 and replacement_bytes == target_at(surface, x, y):
         return None
+
+    if native.available():
+        mask, rect, _count = native.flood(surface, x, y, tolerance)
+        return native.fill(surface, mask, rect, replacement_bytes)
 
     stride = surface.get_stride()
     data = surface.get_data()

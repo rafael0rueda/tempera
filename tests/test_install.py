@@ -210,6 +210,19 @@ def test_the_build_installs_translations_and_tells_the_app_where_they_are():
     assert "TEMPERA_LOCALE_DIR" in (ROOT / "tempera" / "tempera.in").read_text(encoding="utf-8")
 
 
+def test_the_build_compiles_the_helper_and_tells_the_app_where_it_is():
+    from tempera import native
+
+    assert "subdir('native')" in (ROOT / "meson.build").read_text(encoding="utf-8")
+    build = (ROOT / "native" / "meson.build").read_text(encoding="utf-8")
+    assert "tempera_native.c" in build and "install_dir: pkglibdir" in build
+    assert native.LIBRARY_NAME in (PACKAGE / "meson.build").read_text(encoding="utf-8")
+    launcher = (PACKAGE / "tempera.in").read_text(encoding="utf-8")
+    assert f"'{native.ENVIRONMENT}', '@NATIVE@'" in launcher
+    # The same source the script for the source tree compiles.
+    assert "native/tempera_native.c" in (ROOT / "build-aux" / "build_native.sh").read_text()
+
+
 def test_no_user_visible_string_is_built_with_an_f_string():
     """Translators need whole sentences with named places, which f-strings cannot give them."""
     offenders = []
