@@ -14,6 +14,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Raised whenever a call below changes what it takes or what it gives back:
+ * tempera/native.py will not use a helper built from older source than its own. */
+int
+tempera_version (void)
+{
+    return 1;
+}
+
 /* A rectangle as [left, right) by [top, bottom), and how many pixels it is about. */
 typedef struct {
     int32_t left, top, right, bottom;
