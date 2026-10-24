@@ -154,7 +154,11 @@ def test_a_speckled_border_is_traced_a_view_at_a_time_and_never_kept_whole(monke
     with in_python:
         plain = Selection.from_color(surface, 0, 0, 0)
         everything = covered(plain.edges)
-    for view in ((0, 0, 300, 400), (40, 130, 90, 260), (250, 0, 300, 10), (0, 399, 300, 400)):
+    for view in (
+        (0, 0, 300, 400), (40, 130, 90, 260), (250, 0, 300, 10), (0, 399, 300, 400),
+        # Ending on the seam between tiles: the lines along it are in view too.
+        (0, 0, 2 * EDGE_TILE, 2 * EDGE_TILE), (EDGE_TILE, 10, 2 * EDGE_TILE, EDGE_TILE),
+    ):  # fmt: skip
         left, top, right, bottom = view
         found = covered(selection.edges_within(*view))
         expected = {step for step in everything if left <= step[1] <= right and top <= step[2] <= bottom}
@@ -190,6 +194,22 @@ def test_a_view_scrolled_a_little_is_not_traced_again(monkeypatch):
 
 
 @needs_helper
+def test_a_view_of_more_tiles_than_are_kept_keeps_those_still_in_it(monkeypatch):
+    monkeypatch.setattr(selection_module, "COARSE_ABOVE", 0)
+    monkeypatch.setattr(selection_module, "EDGE_TILES_KEPT", 4)
+    surface = new_surface(1200, 1200, WHITE)
+    paint_pixel(surface, 150, 150, (0.0, 0.0, 0.0, 1.0))
+    selection = Selection.from_color(surface, 0, 0, 0)
+    selection.edges_within(0, 0, 500, 500)
+    kept = dict(selection._tiles)
+    assert len(kept) > 4
+    # Scrolled on by a tile: only the tiles that left the view are let go.
+    selection.edges_within(EDGE_TILE, 0, EDGE_TILE + 500, 500)
+    assert all(selection._tiles[key] is tile for key, tile in kept.items() if key[0] > 0)
+    assert not any(key[0] == 0 for key in selection._tiles)
+
+
+@needs_helper
 def test_lines_are_cut_at_the_same_places_wherever_the_view_is(monkeypatch):
     monkeypatch.setattr(selection_module, "COARSE_ABOVE", 0)
     # A long straight border: the dashes along it must not shift as it scrolls.
@@ -206,6 +226,13 @@ def test_lines_are_cut_at_the_same_places_wherever_the_view_is(monkeypatch):
     assert [(edge[0], edge[2]) for edge in whole] == [(0, 128), (128, 256), (256, 384), (384, 512), (512, 600)]
     assert along(selection.edges_within(200, 0, 300, 40)) == whole[1:3]
     assert along(selection.edges_within(520, 0, 590, 40)) == whole[4:]
+
+
+@needs_helper
+def test_a_helper_built_from_other_source_is_left_alone(monkeypatch):
+    assert native.library.tempera_version() == native.VERSION
+    monkeypatch.setattr(native, "VERSION", native.VERSION + 1)
+    assert native._load() is None
 
 
 def test_without_the_helper_everything_still_works(in_python):

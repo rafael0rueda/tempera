@@ -72,9 +72,10 @@ EDGE_BAND = 128
 # A border of more edges than this is drawn only as finely as the screen shows
 # it once the picture is zoomed out: see Selection.edges_within().
 COARSE_ABOVE = 20_000
-# With the C helper, such a border is traced in tiles this many pixels a side
-# as they come into view, and this many are kept before starting over.
-EDGE_TILE = EDGE_BAND
+# With the C helper, such a border is traced in tiles this many pixels a side,
+# its lines cut at their sides, as they come into view; and past this many
+# tiles, those out of view are let go.
+EDGE_TILE = 128
 EDGE_TILES_KEPT = 256
 
 
@@ -273,6 +274,11 @@ class Selection:
         """Whether the border has too many edges to draw, or even to keep, all of."""
         return self.mask is not None and self._edge_count > COARSE_ABOVE
 
+    @property
+    def _tiled(self) -> bool:
+        """Whether the border is traced a view at a time, never all of it at once."""
+        return self._speckled and native.available()
+
     def _edges_in_view(
         self, left: float, top: float, right: float, bottom: float
     ) -> list[tuple[int, int, int, int]]:
@@ -280,19 +286,23 @@ class Selection:
         helper, a tile at a time: a million of them as Python objects take
         hundreds of megabytes, and a moment to list that a view's worth does not.
         A view scrolled on traces only the tiles that came into it."""
+        # Up to the tile that starts at the view's right or bottom side, too:
+        # the lines along that side are the next tile's to give.
         columns = range(
             max(0, int(left - self.x) // EDGE_TILE),
-            min(-(-self.width // EDGE_TILE), -(-math.ceil(right - self.x) // EDGE_TILE)),
+            min(-(-self.width // EDGE_TILE), math.floor(right - self.x) // EDGE_TILE + 1),
         )
         rows = range(
             max(0, int(top - self.y) // EDGE_TILE),
-            min(-(-self.height // EDGE_TILE), -(-math.ceil(bottom - self.y) // EDGE_TILE)),
+            min(-(-self.height // EDGE_TILE), math.floor(bottom - self.y) // EDGE_TILE + 1),
         )
         view = (columns, rows)
         if self._in_view is not None and self._in_view[0] == view:
             return self._in_view[1]
         if len(self._tiles) > EDGE_TILES_KEPT:
-            self._tiles.clear()
+            # Those out of view go, and those in it stay, however many it takes.
+            for key in [key for key in self._tiles if key[0] not in columns or key[1] not in rows]:
+                del self._tiles[key]
         found = []
         for row in rows:
             for column in columns:
@@ -304,7 +314,7 @@ class Selection:
                         self.width,
                         self.height,
                         (x, y, x + EDGE_TILE, y + EDGE_TILE),
-                        EDGE_BAND,
+                        EDGE_TILE,
                         (self.x, self.y),
                     )
                 found += tile
@@ -362,7 +372,7 @@ class Selection:
             # A power of two, so that zooming smoothly works out only a few.
             step = 1 << math.ceil(math.log2(1 / zoom))
             bands = self._coarse_bands(step)
-        elif self._speckled and native.available():
+        elif self._tiled:
             return self._edges_in_view(left, top, right, bottom)
         else:
             bands = self._edge_bands
@@ -379,7 +389,7 @@ class Selection:
 
         With the C helper, a border of very many edges is only counted: it is
         then traced a view at a time, as it is drawn."""
-        if self._speckled and native.available():
+        if self._tiled:
             return
         self._edge_bands
 

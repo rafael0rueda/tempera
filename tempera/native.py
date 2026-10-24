@@ -19,6 +19,7 @@ from __future__ import annotations
 import ctypes
 import os
 import struct
+import threading
 from pathlib import Path
 
 import cairo
@@ -26,6 +27,9 @@ import cairo
 # Named in the environment by the launcher; "off" does without it.
 ENVIRONMENT = "TEMPERA_NATIVE"
 LIBRARY_NAME = "tempera_native.so"
+# What tempera_version() in the C says of the calls below; one built from
+# other source is left alone.
+VERSION = 1
 
 
 class _Bounds(ctypes.Structure):
@@ -47,6 +51,10 @@ def _load() -> ctypes.CDLL | None:
             continue
         try:
             library = ctypes.CDLL(path)
+            library.tempera_version.restype = ctypes.c_int
+            library.tempera_version.argtypes = ()
+            if library.tempera_version() != VERSION:
+                continue
             pointer, number = ctypes.c_void_p, ctypes.c_int
             library.tempera_flood.restype = number
             library.tempera_flood.argtypes = (
@@ -64,7 +72,7 @@ def _load() -> ctypes.CDLL | None:
                 number, number, pointer, ctypes.c_int64,
             )  # fmt: skip
         except (OSError, AttributeError):
-            # Built for another machine, or an older one without all of it.
+            # Built for another machine, or from source too old to say its version.
             continue
         return library
     return None
@@ -137,6 +145,13 @@ def count_edges(mask: cairo.ImageSurface, width: int, height: int) -> int:
     )  # fmt: skip
 
 
+# Room for lines is kept for edges() to write into, for each thread: as much
+# as it has needed, up to this many, which is more than any tile has. A view
+# is then traced in one pass a tile, with no room made for each.
+ROOM_KEPT = 1 << 16
+_room = threading.local()
+
+
 def edges(
     mask: cairo.ImageSurface,
     width: int,
@@ -153,14 +168,17 @@ def edges(
     rectangle beyond to give, unless that side is the mask's own.
     """
     address, stride = _address(mask), mask.get_stride()
-    room = 4096
+    lines = getattr(_room, "lines", None)
+    if lines is None:
+        lines = _room.lines = (ctypes.c_int32 * (4096 * 4))()
     while True:
-        lines = (ctypes.c_int32 * (room * 4))()
-        found = library.tempera_edges(
-            address, stride, width, height, *rect, cut, *offset, lines, room
-        )
+        room = len(lines) // 4
+        found = library.tempera_edges(address, stride, width, height, *rect, cut, *offset, lines, room)
         if found <= room:
             break
-        room = found
+        # Asked again, with room for them all.
+        lines = (ctypes.c_int32 * (found * 4))()
+        if found <= ROOM_KEPT:
+            _room.lines = lines
     # Straight from the numbers to tuples, without a Python loop over them.
     return list(struct.iter_unpack("4i", memoryview(lines).cast("B")[: found * 16]))
