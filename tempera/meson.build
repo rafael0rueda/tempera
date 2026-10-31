@@ -13,6 +13,7 @@ python.install_sources(
     'file_io.py',
     'i18n.py',
     'interface_size.py',
+    'jxl.py',
     'main.py',
     'native.py',
     'openraster.py',
@@ -100,6 +101,7 @@ launcher.set('PYTHON_DIR', python.get_install_dir())
 launcher.set('PKGDATADIR', pkgdatadir)
 launcher.set('LOCALEDIR', localedir)
 launcher.set('NATIVE', pkglibdir / 'tempera_native.so')
+launcher.set('JXL', pkglibdir / 'tempera_jxl.so')
 
 configure_file(
   input: 'tempera.in',

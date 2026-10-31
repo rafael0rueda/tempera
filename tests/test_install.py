@@ -204,6 +204,17 @@ def test_every_file_with_translatable_strings_is_listed_for_translators():
     assert all((ROOT / name).is_file() for name in listed)
 
 
+def test_the_build_compiles_the_jpeg_xl_helper_and_tells_the_app_where_it_is():
+    from tempera import jxl
+
+    build = (ROOT / "native" / "meson.build").read_text(encoding="utf-8")
+    assert "tempera_jxl.c" in build and "dependency('libjxl'" in build
+    assert jxl.LIBRARY_NAME in (PACKAGE / "meson.build").read_text(encoding="utf-8")
+    launcher = (PACKAGE / "tempera.in").read_text(encoding="utf-8")
+    assert f"'{jxl.ENVIRONMENT}', '@JXL@'" in launcher
+    assert "native/tempera_jxl.c" in (ROOT / "build-aux" / "build_native.sh").read_text()
+
+
 def test_the_build_installs_translations_and_tells_the_app_where_they_are():
     assert "subdir('po')" in (ROOT / "meson.build").read_text(encoding="utf-8")
     assert "i18n.gettext" in (ROOT / "po" / "meson.build").read_text(encoding="utf-8")

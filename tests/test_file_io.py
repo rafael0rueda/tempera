@@ -101,10 +101,17 @@ def test_save_as_name_suggests_png_for_a_format_it_cannot_write():
 # image_filters
 
 
-def test_image_filters_offers_images_png_openraster_and_all_files():
+def test_image_filters_offers_images_each_format_and_all_files():
     store = image_filters()
     names = [store.get_item(i).get_name() for i in range(store.get_n_items())]
-    assert names == ["Images", "PNG image", "OpenRaster image, with layers", "All files"]
+    assert names == [
+        "Images",
+        "PNG image",
+        "JPEG image",
+        "JPEG XL image",
+        "OpenRaster image, with layers",
+        "All files",
+    ]
     assert all(isinstance(store.get_item(i), Gtk.FileFilter) for i in range(store.get_n_items()))
 
 

@@ -33,7 +33,7 @@ jobs:
           git python3 python3-gobject python3-cairo python3-pytest
           gtk4 libadwaita gobject-introspection glycin-loaders dejavu-sans-fonts
           xorg-x11-server-Xvfb xauth
-          meson ninja-build gcc gettext appstream desktop-file-utils
+          meson ninja-build gcc libjxl-devel gettext appstream desktop-file-utils
 
       - uses: actions/checkout@v5
 
@@ -58,6 +58,7 @@ jobs:
           GSK_RENDERER: cairo
           # Not finding the helper is a failure here, not a reason to skip.
           TEMPERA_REQUIRE_NATIVE: "1"
+          TEMPERA_REQUIRE_JXL: "1"
 
       # And again as it runs where nobody has compiled the helper.
       - name: Run the tests without the helper
@@ -69,6 +70,7 @@ jobs:
         env:
           GSK_RENDERER: cairo
           TEMPERA_NATIVE: "off"
+          TEMPERA_JXL: "off"
 
       - name: Build and install
         run: |

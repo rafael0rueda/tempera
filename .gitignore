@@ -18,3 +18,4 @@ Tempera paint application design.zip
 
 # The C helper, compiled into the source tree by build-aux/build_native.sh
 tempera/tempera_native.so
+tempera/tempera_jxl.so

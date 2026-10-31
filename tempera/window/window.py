@@ -110,6 +110,9 @@ class TemperaWindow(
         self._typing = shortcuts.CANVAS
         self._syncing_size = False
         self._last_jpeg_quality = 90
+        # Lossless, so that saving a picture opened from a JPEG XL file costs
+        # nothing unless a lower quality is asked for.
+        self._last_jxl_quality = 100
         # The picture already told that saving it as PNG or JPEG merges its layers.
         # The picture whose layers the user agreed to save merged, if still open.
         self._flat_agreed: weakref.ref | None = None

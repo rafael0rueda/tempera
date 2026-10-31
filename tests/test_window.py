@@ -530,6 +530,7 @@ def test_the_tool_sizes_colours_and_window_size_are_remembered(application, wind
     window.colors.remember(rgba("#ff0000"))
     window.set_default_size(900, 700)
     window._last_jpeg_quality = 55
+    window._last_jxl_quality = 65
 
     window._save_preferences()
     reopened = TemperaWindow(application)
@@ -540,6 +541,7 @@ def test_the_tool_sizes_colours_and_window_size_are_remembered(application, wind
         assert reopened.colors.primary.to_string() == rgba("#ff0000").to_string()
         assert reopened.get_default_size() == (900, 700)
         assert reopened._last_jpeg_quality == 55
+        assert reopened._last_jxl_quality == 65
         assert reopened.colors.recent
     finally:
         reopened.destroy()

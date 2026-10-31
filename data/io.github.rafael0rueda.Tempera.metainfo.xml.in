@@ -16,7 +16,7 @@
     <p>Features:</p>
     <ul>
       <li>Layers to paint on apart: add, duplicate, reorder, hide, fade, merge and flatten them</li>
-      <li>OpenRaster files that keep the layers, which GIMP and Krita open too, and Export As for a PNG or JPEG copy</li>
+      <li>OpenRaster files that keep the layers, which GIMP and Krita open too, and Export As for a PNG, JPEG or JPEG XL copy</li>
       <li>Pencil, brush, airbrush and eraser, which can rub back to transparency</li>
       <li>Nine shapes — line, curve, arrow, rectangle, rounded rectangle, ellipse, triangle, star and polygon — filled or outlined, solid, dashed or dotted, with smooth or crisp edges, and grips to resize or move each one before it lands</li>
       <li>Text in any font installed on the system: bold, italic, underlined or struck through, aligned, and on a box if wanted</li>
