@@ -10,6 +10,7 @@ from typing import Callable
 import cairo
 from gi.repository import GdkPixbuf, Gio, GLib, Gtk
 
+from . import jxl
 from .background import run_in_background
 from .document import MAX_SIZE, Document, Layer, flatten, new_surface
 from .i18n import _
@@ -20,6 +21,7 @@ EXTENSION_FORMATS = {
     ".png": "png",
     ".jpg": "jpeg",
     ".jpeg": "jpeg",
+    ".jxl": "jxl",
     ".bmp": "bmp",
     ".tiff": "tiff",
     ".tif": "tiff",
@@ -30,11 +32,14 @@ EXTENSION_FORMATS = {
 # The one format that keeps the layers; the rest get the picture as it shows.
 LAYERED_FORMAT = "ora"
 FLATTEN_FORMATS = {"jpeg", "bmp"}
+# The formats that ask how good a file to make.
+QUALITY_FORMATS = {"jpeg", "jxl"}
 # Readable image types, for the Open dialog and the desktop file. GIF and ICO
 # open like the rest; GIF just cannot be written back.
 OPEN_MIME_TYPES = (
     "image/png",
     "image/jpeg",
+    "image/jxl",
     "image/bmp",
     "image/tiff",
     "image/webp",
@@ -52,27 +57,52 @@ LOAD_CHUNK = 64 * 1024
 MAX_FILE_BYTES = 512 * 1024 * 1024
 
 
-def image_filters(layered_only: bool = False) -> Gio.ListStore:
+def _filter_formats() -> dict[str, tuple[str, str]]:
+    """The formats a file dialog names: each one's filter name and type."""
+    return {
+        "png": (_("PNG image"), "image/png"),
+        "jpeg": (_("JPEG image"), "image/jpeg"),
+        "jxl": (_("JPEG XL image"), "image/jxl"),
+        LAYERED_FORMAT: (_("OpenRaster image, with layers"), "image/openraster"),
+    }
+
+
+def image_filters(layered_only: bool = False, saving: bool = False) -> Gio.ListStore:
     """What a file dialog offers to show: every image, or with `layered_only`
-    the ones that keep layers first."""
+    the ones that keep layers first. When `saving`, a format that cannot be
+    written is not offered."""
     store = Gio.ListStore.new(Gtk.FileFilter)
 
-    images = Gtk.FileFilter(name=_("Images"))
-    for mime in OPEN_MIME_TYPES:
-        images.add_mime_type(mime)
+    if not layered_only:
+        images = Gtk.FileFilter(name=_("Images"))
+        for mime in OPEN_MIME_TYPES:
+            images.add_mime_type(mime)
+        store.append(images)
 
-    png = Gtk.FileFilter(name=_("PNG image"))
-    png.add_mime_type("image/png")
-
-    ora = Gtk.FileFilter(name=_("OpenRaster image, with layers"))
-    ora.add_mime_type("image/openraster")
-    for each in (ora,) if layered_only else (images, png, ora):
+    for image_format, (name, mime) in _filter_formats().items():
+        if layered_only and image_format != LAYERED_FORMAT:
+            continue
+        if saving and image_format == "jxl" and not jxl.available():
+            continue
+        each = Gtk.FileFilter(name=name)
+        each.add_mime_type(mime)
         store.append(each)
 
     every = Gtk.FileFilter(name=_("All files"))
     every.add_pattern("*")
     store.append(every)
     return store
+
+
+def format_of_filter(chosen: Gtk.FileFilter | None) -> str | None:
+    """The format a file dialog's filter stands for, or None for one that is not a
+    single format: then the name of the file decides."""
+    if chosen is None:
+        return None
+    for image_format, (name, _mime) in _filter_formats().items():
+        if name == chosen.get_name():
+            return image_format
+    return None
 
 
 def image_error(message: str) -> GLib.Error:
@@ -238,13 +268,30 @@ def default_extension(layered: bool) -> str:
     return LAYERED_EXTENSION if layered else DEFAULT_EXTENSION
 
 
-def with_default_extension(file: Gio.File, layered: bool = False) -> Gio.File:
-    """The file to save to, with .png added unless the name ends in a format Tempera writes.
+def with_format(file: Gio.File, image_format: str) -> Gio.File:
+    """The file named for a format: an extension Tempera knows is replaced, and any
+    other name is added to."""
+    if EXTENSION_FORMATS.get(_extension(file)) == image_format:
+        return file
+    extension = next(key for key, value in EXTENSION_FORMATS.items() if value == image_format)
+    name = file.get_basename()
+    if _extension(file) in EXTENSION_FORMATS:
+        name = os.path.splitext(name)[0]
+    return file.get_parent().get_child(name + extension)
+
+
+def with_default_extension(
+    file: Gio.File, layered: bool = False, chosen_format: str | None = None
+) -> Gio.File:
+    """The file to save to, in the `chosen_format` if one was picked in the dialog,
+    else with .png added unless the name ends in a format Tempera writes.
 
     Otherwise a name without an extension, or with one such as .gif, would get
     PNG data under a name that says something else. A picture with layers gets
     .ora instead, which keeps them.
     """
+    if chosen_format is not None:
+        return with_format(file, chosen_format)
     if format_for(file) is not None:
         return file
     return file.get_parent().get_child(file.get_basename() + default_extension(layered))
@@ -272,11 +319,17 @@ def export_name(file: Gio.File | None) -> str:
     return os.path.splitext(name)[0] + DEFAULT_EXTENSION
 
 
+def _extension(file: Gio.File) -> str:
+    # The name rather than the path, which a network location does not have.
+    return os.path.splitext(file.get_basename())[1].lower()
+
+
 def format_for(file: Gio.File) -> str | None:
     """The format a file's extension asks for, or None if Tempera cannot write it."""
-    # The name rather than the path, which a network location does not have.
-    extension = os.path.splitext(file.get_basename())[1].lower()
-    return EXTENSION_FORMATS.get(extension)
+    image_format = EXTENSION_FORMATS.get(_extension(file))
+    if image_format == "jxl" and not jxl.available():
+        return None
+    return image_format
 
 
 def image_to_save(document: Document, file: Gio.File) -> tuple[object, str]:
@@ -343,6 +396,11 @@ def encode_image(picture, image_format: str, quality: int) -> GLib.Bytes:
             raise image_error(str(error)) from None
         return GLib.Bytes.new(stream.getvalue())
     pixbuf = picture
+    if image_format == "jxl":
+        data = jxl.encode(pixbuf, quality)
+        if data is None:
+            raise image_error(_("The picture could not be written as JPEG XL"))
+        return GLib.Bytes.new(data)
     options = (["quality"], [str(quality)]) if image_format == "jpeg" else ([], [])
     _ok, data = pixbuf.save_to_bufferv(image_format, *options)
     return GLib.Bytes.new(data)

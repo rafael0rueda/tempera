@@ -14,8 +14,10 @@ from ..document import Document
 from ..i18n import _
 from ..file_io import (
     LAYERED_FORMAT,
+    QUALITY_FORMATS,
     export_name,
     format_for,
+    format_of_filter,
     image_filters,
     load_document_async,
     save_as_name,
@@ -169,7 +171,7 @@ class FilesMixin:
             self._save_as(then)
             return
         # Ctrl+S keeps the quality already chosen; only Save As asks for it.
-        self._write(document.file, then, self._last_jpeg_quality)
+        self._write(document.file, then, self._last_quality(format_for(document.file)))
 
     def _print(self) -> None:
         # What gets printed should match what is on screen.
@@ -198,25 +200,53 @@ class FilesMixin:
             return
         self.canvas.commit_floating()
         document = self.canvas.document
-        dialog = Gtk.FileDialog(
-            title=_("Save Image"), filters=image_filters(layered_only=keep_layers)
-        )
         layered = len(document.layers) > 1
-        dialog.set_initial_name(save_as_name(document.file, layered))
 
-        def on_done(source, result):
-            try:
-                chosen = source.save_finish(result)
-            except GLib.Error:
-                return
-            file = with_default_extension(chosen, layered)
+        def on_chosen(chosen: Gio.File, chosen_format: str | None) -> None:
+            file = with_default_extension(chosen, layered, chosen_format)
             if not file.equal(chosen) and file.query_exists(None):
                 # The dialog only asked about replacing the name as typed.
                 self._confirm_replace(file, lambda: self._write(file, then))
             else:
                 self._write(file, then)
 
-        dialog.save(self, None, on_done)
+        self._ask_where_to_save(
+            _("Save Image"),
+            image_filters(layered_only=keep_layers, saving=True),
+            None,
+            save_as_name(document.file, layered),
+            on_chosen,
+        )
+
+    def _ask_where_to_save(self, title: str, filters, folder, name: str, on_chosen) -> None:
+        """Ask for a file to save to, and tell `on_chosen` the file and the format
+        picked in the dialog, if it picked one.
+
+        The older dialog on purpose: Gtk.FileDialog never says which filter was
+        picked, so choosing "JPEG image" could not make a JPEG.
+        """
+        dialog = Gtk.FileChooserNative.new(title, self, Gtk.FileChooserAction.SAVE, None, None)
+        dialog.set_modal(True)
+        for index in range(filters.get_n_items()):
+            dialog.add_filter(filters.get_item(index))
+        if folder is not None:
+            try:
+                dialog.set_current_folder(folder)
+            except GLib.Error:
+                # A folder that has gone: the dialog starts somewhere else.
+                pass
+        dialog.set_current_name(name)
+
+        def on_response(dialog, response: int) -> None:
+            self._save_chooser = None
+            if response == Gtk.ResponseType.ACCEPT:
+                on_chosen(dialog.get_file(), format_of_filter(dialog.get_filter()))
+            dialog.destroy()
+
+        dialog.connect("response", on_response)
+        # Nothing else holds on to it while it shows.
+        self._save_chooser = dialog
+        dialog.show()
 
     def _export_as(self) -> None:
         """Write a copy, in any format, of the picture as it shows.
@@ -229,24 +259,18 @@ class FilesMixin:
             return
         self.canvas.commit_floating()
         document = self.canvas.document
-        dialog = Gtk.FileDialog(title=_("Export Image"), filters=image_filters())
         folder, name = self._export_start(document)
-        if folder is not None:
-            dialog.set_initial_folder(folder)
-        dialog.set_initial_name(name)
 
-        def on_done(source, result):
-            try:
-                chosen = source.save_finish(result)
-            except GLib.Error:
-                return
-            file = with_default_extension(chosen)
+        def on_chosen(chosen: Gio.File, chosen_format: str | None) -> None:
+            file = with_default_extension(chosen, chosen_format=chosen_format)
             if not file.equal(chosen) and file.query_exists(None):
                 self._confirm_replace(file, lambda: self._export(file))
             else:
                 self._export(file)
 
-        dialog.save(self, None, on_done)
+        self._ask_where_to_save(
+            _("Export Image"), image_filters(saving=True), folder, name, on_chosen
+        )
 
     def _export_start(self, document: Document) -> tuple[Gio.File | None, str]:
         """Where Export As starts: where this picture was last exported to, or else
@@ -258,8 +282,11 @@ class FilesMixin:
         return folder, export_name(document.file)
 
     def _export(self, file: Gio.File) -> None:
-        if format_for(file) == "jpeg":
-            self._prompt_jpeg_quality(lambda quality: self._export_now(file, quality), _("Export"))
+        image_format = format_for(file)
+        if image_format in QUALITY_FORMATS:
+            self._prompt_quality(
+                image_format, lambda quality: self._export_now(file, quality), _("Export")
+            )
         else:
             self._export_now(file, None)
 
@@ -294,14 +321,16 @@ class FilesMixin:
 
     def _write(self, file: Gio.File, then=None, quality: int | None = None) -> None:
         """Save to a file, first asking what has to be asked: whether to go without
-        the layers, and, unless a `quality` is given, how good a JPEG to make."""
+        the layers, and, unless a `quality` is given, how good a file to make."""
         document = self.canvas.document
         flat = len(document.layers) > 1 and format_for(file) != LAYERED_FORMAT
         agreed = self._flat_agreed is not None and self._flat_agreed() is document
         if flat and not agreed:
             self._confirm_flat(file, lambda: self._write(file, then, quality), then)
-        elif format_for(file) == "jpeg" and quality is None:
-            self._prompt_jpeg_quality(lambda quality: self._write_now(file, then, quality))
+        elif format_for(file) in QUALITY_FORMATS and quality is None:
+            self._prompt_quality(
+                format_for(file), lambda quality: self._write_now(file, then, quality)
+            )
         else:
             self._write_now(file, then, quality)
 
@@ -332,22 +361,31 @@ class FilesMixin:
         dialog.connect("response", on_response)
         dialog.present(self)
 
-    def _prompt_jpeg_quality(self, on_accept, accept_label: str | None = None) -> None:
+    def _last_quality(self, image_format: str | None) -> int:
+        return self._last_jxl_quality if image_format == "jxl" else self._last_jpeg_quality
+
+    def _prompt_quality(self, image_format: str, on_accept, accept_label: str | None = None) -> None:
+        jxl = image_format == "jxl"
         scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 1, 100, 1)
-        scale.set_value(self._last_jpeg_quality)
+        scale.set_value(self._last_quality(image_format))
         scale.set_draw_value(True)
         scale.set_hexpand(True)
         scale.set_size_request(interface_size.scaled(220), -1)
-        scale.update_property([Gtk.AccessibleProperty.LABEL], [_("JPEG quality")])
-
+        scale.update_property([Gtk.AccessibleProperty.LABEL], [_("JPEG XL quality") if jxl else _("JPEG quality")])
 
         def accept() -> None:
-            self._last_jpeg_quality = int(scale.get_value())
-            on_accept(self._last_jpeg_quality)
+            quality = int(scale.get_value())
+            if jxl:
+                self._last_jxl_quality = quality
+            else:
+                self._last_jpeg_quality = quality
+            on_accept(quality)
 
         self.ask(
-            _("JPEG Quality"),
-            _("Lower values make a smaller file but lose more detail."),
+            _("JPEG XL Quality") if jxl else _("JPEG Quality"),
+            _("Lower values make a smaller file but lose more detail. At 100, no detail is lost.")
+            if jxl
+            else _("Lower values make a smaller file but lose more detail."),
             "save",
             accept_label or _("Save"),
             accept,

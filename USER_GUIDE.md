@@ -237,7 +237,7 @@ a whole canvas of memory: 89 at 4000 × 3000 pixels, 16 at the largest size.
 
 ## Opening and saving
 
-Images open in any format GdkPixbuf reads (PNG, JPEG, BMP, TIFF, WebP, GIF, ICO…), and
+Images open in any format GdkPixbuf reads (PNG, JPEG, JPEG XL, BMP, TIFF, WebP, GIF, ICO…), and
 OpenRaster (`.ora`) with its layers, up to 8192 × 8192 pixels; a larger image is refused with a message rather than loaded, as
 is anything that is not an ordinary file, such as a named pipe. Reading and writing
 happen in the background, with a spinner in the header bar, so a large image or a slow
@@ -247,8 +247,9 @@ Photos open the right way up, following the orientation the camera or phone reco
 **Recent Files** in the main menu lists the last eight images you opened or saved; one
 that can no longer be opened is taken off the list when you pick it.
 
-Saving writes OpenRaster, PNG, JPEG, BMP, TIFF, WebP or ICO, picked by the file
-extension. Only OpenRaster keeps the layers, with their names, order, opacity and
+Saving writes OpenRaster, PNG, JPEG, JPEG XL, BMP, TIFF, WebP or ICO, picked by the file
+extension, or by the format chosen in the save window's list: choosing **JPEG image**
+there saves a JPEG, and changes the name to match. Only OpenRaster keeps the layers, with their names, order, opacity and
 whether they show; GIMP, Krita and MyPaint open it too. The other formats get the picture
 as it shows, every visible layer merged, so the first time a picture with layers is
 saved that way Tempera asks: **Save Flattened** goes ahead, and does not ask again for
@@ -258,6 +259,8 @@ suggests an `.ora` name for a picture with more than one layer. A name typed wit
 of those extensions gets `.png` added, or `.ora` for a picture with layers — Tempera asks
 first if that would replace an existing file. **Save As** to a JPEG asks for a quality from 1 to 100; `Ctrl+S`
 afterwards keeps that choice without asking again, and it is remembered for next time.
+JPEG XL asks the same way, each with a quality of its own, and keeps transparency; it
+starts at 100, which loses nothing at all, not even in a picture saved over and over.
 An image opened from a format Tempera cannot write, such as GIF, is never overwritten:
 `Ctrl+S` asks where to save it, suggesting the same name as a PNG. The same goes for an
 OpenRaster file from GIMP or Krita that holds what Tempera has no place for — layers

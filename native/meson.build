@@ -14,3 +14,19 @@ if native_built
     install_dir: pkglibdir,
   )
 endif
+
+# Writing JPEG XL: see tempera_jxl.c. Kept apart because it needs libjxl, and
+# built only where that is there; the app then opens the format but does not
+# write it.
+libjxl = dependency('libjxl', required: false)
+libjxl_threads = dependency('libjxl_threads', required: false)
+jxl_built = native_built and libjxl.found() and libjxl_threads.found()
+if jxl_built
+  jxl_module = shared_module('tempera_jxl',
+    'tempera_jxl.c',
+    name_prefix: '',
+    dependencies: [libjxl, libjxl_threads],
+    install: true,
+    install_dir: pkglibdir,
+  )
+endif

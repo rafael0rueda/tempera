@@ -214,6 +214,9 @@ class SessionMixin:
         def restore_jpeg_quality(text: str) -> None:
             self._last_jpeg_quality = _whole(text, 90, (1, 100))
 
+        def restore_jxl_quality(text: str) -> None:
+            self._last_jxl_quality = _whole(text, 100, (1, 100))
+
         def restore_new_image(text: str) -> None:
             width, height, transparent = (text.split() + ["", "", ""])[:3]
             self._new_image = (
@@ -252,6 +255,7 @@ class SessionMixin:
                 restore_layers_panel,
             ),
             Option("jpeg-quality", lambda: str(self._last_jpeg_quality), restore_jpeg_quality),
+            Option("jxl-quality", lambda: str(self._last_jxl_quality), restore_jxl_quality),
             Option("new-image", new_image, restore_new_image),
             self._color("primary-color", "primary"),
             self._color("secondary-color", "secondary"),

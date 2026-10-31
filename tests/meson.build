@@ -11,6 +11,12 @@ if pytest.found()
     environment = {'TEMPERA_NATIVE': 'off'}
     built = []
   endif
+  if jxl_built
+    environment += {'TEMPERA_JXL': jxl_module.full_path(), 'TEMPERA_REQUIRE_JXL': '1'}
+    built += [jxl_module]
+  else
+    environment += {'TEMPERA_JXL': 'off'}
+  endif
   test(
     'pytest',
     pytest,

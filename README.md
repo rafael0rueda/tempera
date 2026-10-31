@@ -9,7 +9,7 @@ preference and accent colour automatically, and works entirely offline.
 ## Features
 
 - Layers: add, duplicate, reorder, hide, fade, merge and flatten them, kept in
-  OpenRaster files that GIMP and Krita open too, and exported as PNG or JPEG copies
+  OpenRaster files that GIMP and Krita open too, and exported as PNG, JPEG or JPEG XL copies
 - Pencil, brush, airbrush and eraser, which can rub back to transparency
 - Nine shapes — line, curve, arrow, rectangle, rounded rectangle, ellipse, triangle, star
   and polygon — filled or outlined, solid, dashed or dotted, with smooth or crisp edges,
@@ -66,6 +66,10 @@ Filling and the magic wand are some ten times quicker on photos with a small C h
 which a meson build compiles and installs. Tempera works the same without it, so from
 source it is optional; `build-aux/build_native.sh` compiles it next to the Python (it
 needs `gcc`), and `TEMPERA_NATIVE=off` runs without it.
+
+Saving as JPEG XL needs a second small helper, built the same way wherever libjxl's
+headers are there (`sudo dnf install libjxl-devel`). Without it, JPEG XL files still
+open, and saving offers the other formats; `TEMPERA_JXL=off` runs without it.
 
 ## Running the tests
 
